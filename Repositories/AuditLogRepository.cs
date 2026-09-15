@@ -66,30 +66,30 @@ public class AuditLogRepository : IAuditLogRepository
 		int take = Math.Clamp(query.Take, 1, 200);
 		int skip = Math.Max(0, query.Skip);
 		List<AuditLogListItemDto> rows = await (from a in ApplySorting(filtered, query).Skip(skip).Take(take)
-			select new AuditLogListItemDto
-			{
-				Id = a.Id,
-				OccurredAt = a.OccurredAt,
-				CorrelationId = a.CorrelationId,
-				Category = a.Category,
-				Action = a.Action,
-				Severity = a.Severity,
-				Summary = a.Summary,
-				IsSuccess = a.IsSuccess,
-				StatusCode = a.StatusCode,
-				UserId = a.UserId,
-				Username = a.Username,
-				BusinessId = a.BusinessId,
-				BookId = a.BookId,
-				EntityName = a.EntityName,
-				EntityId = a.EntityId,
-				Operation = a.Operation,
-				HttpMethod = a.HttpMethod,
-				Path = a.Path,
-				IpAddress = a.IpAddress,
-				DurationMs = a.DurationMs,
-				IsSlow = a.IsSlow
-			}).ToListAsync(cancellationToken);
+												select new AuditLogListItemDto
+												{
+													Id = a.Id,
+													OccurredAt = a.OccurredAt,
+													CorrelationId = a.CorrelationId,
+													Category = a.Category,
+													Action = a.Action,
+													Severity = a.Severity,
+													Summary = a.Summary,
+													IsSuccess = a.IsSuccess,
+													StatusCode = a.StatusCode,
+													UserId = a.UserId,
+													Username = a.Username,
+													BusinessId = a.BusinessId,
+													BookId = a.BookId,
+													EntityName = a.EntityName,
+													EntityId = a.EntityId,
+													Operation = a.Operation,
+													HttpMethod = a.HttpMethod,
+													Path = a.Path,
+													IpAddress = a.IpAddress,
+													DurationMs = a.DurationMs,
+													IsSlow = a.IsSlow
+												}).ToListAsync(cancellationToken);
 		foreach (AuditLogListItemDto row in rows)
 		{
 			Enrich(row);
@@ -106,8 +106,8 @@ public class AuditLogRepository : IAuditLogRepository
 	public async Task<AuditLogDetailDto?> GetByIdAsync(long id, AuditLogQuery scope, CancellationToken cancellationToken = default(CancellationToken))
 	{
 		AuditLogDetailDto row = await (from a in ApplyScope(_context.AuditLogs.AsNoTracking(), scope)
-			where a.Id == id
-			select a).Select(DetailProjection).FirstOrDefaultAsync(cancellationToken);
+									   where a.Id == id
+									   select a).Select(DetailProjection).FirstOrDefaultAsync(cancellationToken);
 		if (row != null)
 		{
 			EnrichDetail(row);
@@ -118,9 +118,9 @@ public class AuditLogRepository : IAuditLogRepository
 	public async Task<List<AuditLogDetailDto>> GetTraceAsync(Guid correlationId, AuditLogQuery scope, CancellationToken cancellationToken = default(CancellationToken))
 	{
 		List<AuditLogDetailDto> rows = await (from a in ApplyScope(_context.AuditLogs.AsNoTracking(), scope)
-			where a.CorrelationId == correlationId
-			orderby a.OccurredAt, a.Id
-			select a).Select(DetailProjection).ToListAsync(cancellationToken);
+											  where a.CorrelationId == correlationId
+											  orderby a.OccurredAt, a.Id
+											  select a).Select(DetailProjection).ToListAsync(cancellationToken);
 		foreach (AuditLogDetailDto row in rows)
 		{
 			EnrichDetail(row);
@@ -159,33 +159,33 @@ public class AuditLogRepository : IAuditLogRepository
 		auditStatsDto5.SlowRequests = await filtered.CountAsync((AuditLog a) => a.IsSlow, cancellationToken);
 		AuditStatsDto auditStatsDto6 = stats;
 		auditStatsDto6.DistinctUsers = await (from a in filtered
-			where a.UserId != null
-			select a.UserId).Distinct().CountAsync(cancellationToken);
+											  where a.UserId != null
+											  select a.UserId).Distinct().CountAsync(cancellationToken);
 		stats.AverageDurationMs = Math.Round((await filtered.Where((AuditLog a) => a.DurationMs != (long?)null).Select((AuditLog a) => (double?)a.DurationMs).AverageAsync(cancellationToken)).GetValueOrDefault(), 1);
 		AuditStatsDto auditStatsDto7 = stats;
 		auditStatsDto7.ByCategory = await BuildBreakdown(from a in filtered
-			group a by a.Category, (string key) => AuditCategory.Label(key), cancellationToken);
+														 group a by a.Category, (string key) => AuditCategory.Label(key), cancellationToken);
 		AuditStatsDto auditStatsDto8 = stats;
 		auditStatsDto8.BySeverity = await BuildBreakdown(from a in filtered
-			group a by a.Severity, (string key) => AuditSeverity.Label(key), cancellationToken);
+														 group a by a.Severity, (string key) => AuditSeverity.Label(key), cancellationToken);
 		AuditStatsDto auditStatsDto9 = stats;
 		auditStatsDto9.ByAction = await BuildBreakdown(from a in filtered
-			group a by a.Action, (string key) => AuditNarrator.DescribeAction(key), cancellationToken, 15);
+													   group a by a.Action, (string key) => AuditNarrator.DescribeAction(key), cancellationToken, 15);
 		AuditStatsDto auditStatsDto10 = stats;
 		auditStatsDto10.ByUser = await BuildBreakdown(from a in filtered
-			where a.Username != null
-			group a by a.Username, (string key) => key, cancellationToken, 15);
+													  where a.Username != null
+													  group a by a.Username, (string key) => key, cancellationToken, 15);
 		AuditStatsDto auditStatsDto11 = stats;
 		auditStatsDto11.Daily = await (from a in filtered
-			group a by a.OccurredAt.Date into g
-			select new AuditDailyPointDto
-			{
-				Date = g.Key,
-				Total = g.Count(),
-				Failures = g.Count((AuditLog x) => !x.IsSuccess)
-			} into p
-			orderby p.Date
-			select p).ToListAsync(cancellationToken);
+									   group a by a.OccurredAt.Date into g
+									   select new AuditDailyPointDto
+									   {
+										   Date = g.Key,
+										   Total = g.Count(),
+										   Failures = g.Count((AuditLog x) => !x.IsSuccess)
+									   } into p
+									   orderby p.Date
+									   select p).ToListAsync(cancellationToken);
 		return stats;
 	}
 
@@ -203,13 +203,13 @@ public class AuditLogRepository : IAuditLogRepository
 	private static async Task<List<AuditBreakdownItemDto>> BuildBreakdown(IQueryable<IGrouping<string, AuditLog>> grouped, Func<string, string> labelFactory, CancellationToken cancellationToken, int? take = null)
 	{
 		IOrderedQueryable<AuditBreakdownItemDto> query = from g in grouped
-			select new AuditBreakdownItemDto
-			{
-				Key = g.Key,
-				Count = g.Count()
-			} into auditBreakdownItemDto
-			orderby auditBreakdownItemDto.Count descending
-			select auditBreakdownItemDto;
+														 select new AuditBreakdownItemDto
+														 {
+															 Key = g.Key,
+															 Count = g.Count()
+														 } into auditBreakdownItemDto
+														 orderby auditBreakdownItemDto.Count descending
+														 select auditBreakdownItemDto;
 		if (take.HasValue)
 		{
 			query = (IOrderedQueryable<AuditBreakdownItemDto>)query.Take(take.Value);
@@ -308,9 +308,9 @@ public class AuditLogRepository : IAuditLogRepository
 			}
 			string[] array = num switch
 			{
-				3 => new string[1] { "Critical" }, 
-				2 => new string[2] { "Critical", "Warning" }, 
-				_ => new string[3] { "Critical", "Warning", "Info" }, 
+				3 => new string[1] { "Critical" },
+				2 => new string[2] { "Critical", "Warning" },
+				_ => new string[3] { "Critical", "Warning", "Info" },
 			};
 			if (1 == 0)
 			{
@@ -352,25 +352,25 @@ public class AuditLogRepository : IAuditLogRepository
 		IOrderedQueryable<AuditLog> result = text switch
 		{
 			"duration" => flag ? (from a in source
-				orderby a.DurationMs descending, a.Id descending
-				select a) : (from a in source
-				orderby a.DurationMs, a.Id
-				select a), 
+								  orderby a.DurationMs descending, a.Id descending
+								  select a) : (from a in source
+											   orderby a.DurationMs, a.Id
+											   select a),
 			"severity" => flag ? (from a in source
-				orderby a.Severity descending, a.Id descending
-				select a) : (from a in source
-				orderby a.Severity, a.Id
-				select a), 
+								  orderby a.Severity descending, a.Id descending
+								  select a) : (from a in source
+											   orderby a.Severity, a.Id
+											   select a),
 			"user" => flag ? (from a in source
-				orderby a.Username descending, a.Id descending
-				select a) : (from a in source
-				orderby a.Username, a.Id
-				select a), 
+							  orderby a.Username descending, a.Id descending
+							  select a) : (from a in source
+										   orderby a.Username, a.Id
+										   select a),
 			_ => flag ? (from a in source
-				orderby a.OccurredAt descending, a.Id descending
-				select a) : (from a in source
-				orderby a.OccurredAt, a.Id
-				select a), 
+						 orderby a.OccurredAt descending, a.Id descending
+						 select a) : (from a in source
+									  orderby a.OccurredAt, a.Id
+									  select a),
 		};
 		if (1 == 0)
 		{

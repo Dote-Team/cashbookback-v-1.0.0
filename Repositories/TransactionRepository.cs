@@ -16,6 +16,7 @@ using cashbook.Dto.contact;
 using cashbook.Dto.paymentMethod;
 using cashbook.Dto.transaction;
 using cashbook.Dto.user;
+using cashbook.Helper;
 using cashbook.Interfaces;
 using cashbook.Models;
 using cashbook.Models.Constants;
@@ -47,14 +48,9 @@ public class TransactionRepository : Repository<Transaction>, ITransactionReposi
 	{
 		try
 		{
-			List<CustomFieldValueCreateDto> customFieldValues = new List<CustomFieldValueCreateDto>();
-			if (!string.IsNullOrWhiteSpace(dto.CustomFieldValues))
-			{
-				customFieldValues = JsonSerializer.Deserialize<List<CustomFieldValueCreateDto>>(dto.CustomFieldValues, new JsonSerializerOptions
-				{
-					PropertyNameCaseInsensitive = true
-				});
-			}
+			// تحليل آمن: الصيغة المعطوبة لا تُحوّل إلى خطأ خادم.
+			// المدقّق يردّ بـ400 قبل الوصول إلى هنا، وهذه حراسة ثانية في العمق.
+			CustomFieldValuesParser.TryParse(dto.CustomFieldValues, out List<CustomFieldValueCreateDto> customFieldValues, out _);
 			string normalizedType = TransactionTypes.Normalize(dto.Type) ?? dto.Type;
 			bool isUsd = dto.Currency == CurrencyCode.USD;
 			decimal? exchangeRate = (isUsd ? dto.ExchangeRate : ((decimal?)null));
@@ -608,18 +604,13 @@ public class TransactionRepository : Repository<Transaction>, ITransactionReposi
 			transaction.PaymentMethodId = dto.PaymentMethodId ?? transaction.PaymentMethodId;
 			transaction.UpdatedAt = DateTime.UtcNow;
 			List<CustomFieldValueCreateDto> customFieldValues = new List<CustomFieldValueCreateDto>();
-			if (!string.IsNullOrWhiteSpace(dto.CustomFieldValues))
-			{
-				customFieldValues = JsonSerializer.Deserialize<List<CustomFieldValueCreateDto>>(dto.CustomFieldValues, new JsonSerializerOptions
-				{
-					PropertyNameCaseInsensitive = true
-				});
-			}
-			if (transaction.CustomFieldValues != null && transaction.CustomFieldValues.Any())
+			// عند فشل التحليل لا تُمسّ القيم القائمة — وإلا تحوّلت صيغة معطوبة إلى حذف بيانات.
+			bool customFieldValuesAccepted = CustomFieldValuesParser.TryParse(dto.CustomFieldValues, out customFieldValues, out _);
+			if (customFieldValuesAccepted && transaction.CustomFieldValues != null && transaction.CustomFieldValues.Any())
 			{
 				_context.CustomFieldValues.RemoveRange(transaction.CustomFieldValues);
 			}
-			if (customFieldValues?.Any() ?? false)
+			if (customFieldValuesAccepted && (customFieldValues?.Any() ?? false))
 			{
 				IEnumerable<CustomFieldValue> newCustomFieldValues = customFieldValues.Select((CustomFieldValueCreateDto cfvDto) => new CustomFieldValue
 				{

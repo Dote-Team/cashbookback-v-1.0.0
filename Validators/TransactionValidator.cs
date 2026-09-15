@@ -12,13 +12,32 @@ public static class TransactionValidator
 {
 	public static List<string> ValidateCreate(CreateTransactionDto dto)
 	{
-		return ValidateRules(dto.Type, dto.Amount, dto.Currency, dto.ExchangeRate, dto.ExchangeDate, (dto.Date == default(DateTime)) ? ((DateTime?)null) : new DateTime?(dto.Date));
+		List<string> errors = ValidateRules(dto.Type, dto.Amount, dto.Currency, dto.ExchangeRate, dto.ExchangeDate, (dto.Date == default(DateTime)) ? ((DateTime?)null) : new DateTime?(dto.Date));
+		AppendCustomFieldErrors(dto.CustomFieldValues, errors);
+		return errors;
 	}
 
 	public static List<string> ValidateUpdate(UpdateTransactionDto dto, Transaction existing, out ResolvedTransactionValues resolved)
 	{
 		resolved = Resolve(dto, existing);
-		return ValidateRules(resolved.Type, resolved.Amount, resolved.Currency, resolved.ExchangeRate, resolved.ExchangeDate, resolved.Date);
+		List<string> errors = ValidateRules(resolved.Type, resolved.Amount, resolved.Currency, resolved.ExchangeRate, resolved.ExchangeDate, resolved.Date);
+		AppendCustomFieldErrors(dto.CustomFieldValues, errors);
+		return errors;
+	}
+
+	/// <summary>
+	/// يضيف خطأ عربياً إذا كانت صيغة الحقول المخصصة معطوبة.
+	///
+	/// <para>وجوده هنا مقصود: المتحكّم يفحص نتيجة هذا المدقّق ويردّ برمز
+	/// <c>400</c> قبل أن يصل الطلب إلى الكتابة، فلا يتحوّل خطأ الصيغة إلى
+	/// خطأ خادم <c>500</c>.</para>
+	/// </summary>
+	private static void AppendCustomFieldErrors(string? customFieldValues, List<string> errors)
+	{
+		if (!CustomFieldValuesParser.TryParse(customFieldValues, out _, out string? error) && !string.IsNullOrEmpty(error))
+		{
+			errors.Add(error);
+		}
 	}
 
 	public static ResolvedTransactionValues Resolve(UpdateTransactionDto dto, Transaction existing)
