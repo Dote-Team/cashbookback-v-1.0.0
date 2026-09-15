@@ -230,7 +230,9 @@ public class BusinessUserRepository : Repository<BusinessUser>, IBusinessUserRep
 		{
 			return false;
 		}
-		BusinessUser targetUser = await _context.BusinessUsers.FirstOrDefaultAsync((BusinessUser bu) => bu.Id == targetUserId && bu.BusinessId == businessId);
+		// كان البحث هنا بـ bu.Id بينما المُمرَّر هو مُعرّف المستخدم (targetUserId)،
+		// فيقارَن مُعرّف مستخدم بمُعرّف صف عضوية ولا يتطابقان أبداً => فشل نقل الملكية دائماً.
+		BusinessUser targetUser = await _context.BusinessUsers.FirstOrDefaultAsync((BusinessUser bu) => bu.UserId == targetUserId && bu.BusinessId == businessId);
 		if (targetUser == null)
 		{
 			return false;
