@@ -76,38 +76,38 @@ public static class TransactionValidator
 		}
 		switch (currency)
 		{
-		case CurrencyCode.USD:
-		{
-			if (!MoneyMath.TryValidateRate(exchangeRate, out string error2))
-			{
-				list.Add(error2);
-			}
-			bool flag = text == "cash in";
-			bool flag2 = text == "cash out";
-			if (!date.HasValue || date.Value == default(DateTime))
-			{
-				list.Add(flag2 ? "تاريخ الإخراج إلزامي لحركات سحب الدولار." : "تاريخ الإدخال الفعلي إلزامي لحركات إيداع الدولار.");
-			}
-			if (flag && (!exchangeDate.HasValue || exchangeDate.Value == default(DateTime)))
-			{
-				list.Add("تاريخ الصرف إلزامي لحركات إيداع الدولار.");
-			}
-			if (flag2 && exchangeDate.HasValue)
-			{
-				list.Add("حركة سحب الدولار تقبل تاريخا\u064b واحدا\u064b فقط (تاريخ الإخراج) ولا ت\u064fسج\u064e\u0651ل بتاريخ صرف.");
-			}
-			break;
-		}
-		case CurrencyCode.IQD:
-			if (exchangeRate.HasValue)
-			{
-				list.Add("سعر الصرف ي\u064fسج\u064e\u0651ل لحركات الدولار فقط.");
-			}
-			if (exchangeDate.HasValue)
-			{
-				list.Add("تاريخ الصرف ي\u064fسج\u064e\u0651ل لحركات إيداع الدولار فقط.");
-			}
-			break;
+			case CurrencyCode.USD:
+				{
+					if (!MoneyMath.TryValidateRate(exchangeRate, out string error2))
+					{
+						list.Add(error2);
+					}
+					bool flag = text == "cash in";
+					bool flag2 = text == "cash out";
+					if (!date.HasValue || date.Value == default(DateTime))
+					{
+						list.Add(flag2 ? "تاريخ الإخراج إلزامي لحركات سحب الدولار." : "تاريخ الإدخال الفعلي إلزامي لحركات إيداع الدولار.");
+					}
+					if (flag && (!exchangeDate.HasValue || exchangeDate.Value == default(DateTime)))
+					{
+						list.Add("تاريخ الصرف إلزامي لحركات إيداع الدولار.");
+					}
+					if (flag2 && exchangeDate.HasValue)
+					{
+						list.Add("حركة سحب الدولار تقبل تاريخا\u064b واحدا\u064b فقط (تاريخ الإخراج) ولا ت\u064fسج\u064e\u0651ل بتاريخ صرف.");
+					}
+					break;
+				}
+			case CurrencyCode.IQD:
+				if (exchangeRate.HasValue)
+				{
+					list.Add("سعر الصرف ي\u064fسج\u064e\u0651ل لحركات الدولار فقط.");
+				}
+				if (exchangeDate.HasValue)
+				{
+					list.Add("تاريخ الصرف ي\u064fسج\u064e\u0651ل لحركات إيداع الدولار فقط.");
+				}
+				break;
 		}
 		return list;
 	}
