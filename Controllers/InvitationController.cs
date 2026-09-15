@@ -121,11 +121,19 @@ public class InvitationController : ControllerBase
 				_response.ErrorMessages = new List<string> { "An error occurred while adding the member." };
 				return StatusCode(500, _response);
 			}
+
+			// العضوية حُفظت فعلاً، فيأتي الإشعار بعدها ولا يُلغيها إن فشل.
+			// والنتيجة تُعاد في الاستجابة حتى تعرف الواجهة أن الإضافة تمت والبريد لم يصل.
+			string businessName = await _context.Businesses.Where((Business b) => b.Id == inviteDto.BusinessId).Select((Business b) => b.Name).FirstOrDefaultAsync() ?? string.Empty;
+			EmailDeliveryResult mail = await _emailService.SendMembershipNoticeAsync(inviteDto, businessName);
+
 			_response.StatusCode = HttpStatusCode.OK;
 			_response.IsSuccess = true;
 			_response.Result = new
 			{
-				message = "member added successfully."
+				message = "member added successfully.",
+				emailSent = mail.Sent,
+				emailNote = mail.Message
 			};
 		}
 		catch (Exception ex)

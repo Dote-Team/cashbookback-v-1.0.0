@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
+using System.Text;
 using System.Threading.Tasks;
 using MailKit.Net.Smtp;
 using MailKit.Security;
@@ -27,23 +29,107 @@ public class EmailService : IEmailService
 		_context = context;
 	}
 
-	public async Task SendInvitationEmailAsync(string recipientEmail, string invitationLink)
+	public async Task<EmailDeliveryResult> SendMembershipNoticeAsync(InviteDto inviteDto, string businessName)
 	{
-		MimeMessage message = new MimeMessage
+		if (!_settings.Enabled)
 		{
-			From = { (InternetAddress)new MailboxAddress(_settings.FromName, _settings.FromEmail) },
-			To = { (InternetAddress)MailboxAddress.Parse(recipientEmail) },
-			Subject = "You're Invited to Join Our Business Platform"
-		};
-		BodyBuilder builder = new BodyBuilder
+			return EmailDeliveryResult.Skipped("إرسال البريد معطَّل في إعدادات الخادم.");
+		}
+		if (string.IsNullOrWhiteSpace(_settings.SmtpServer) || string.IsNullOrWhiteSpace(_settings.FromEmail))
 		{
-			HtmlBody = $"\n                <p>Hello,</p>\n                <p>You’ve been invited to join our platform. Click the link below to accept the invitation:</p>\n                <p><a href=\"{invitationLink}\">{invitationLink}</a></p>\n                <p>If you were not expecting this, you can ignore this email.</p>"
-		};
-		message.Body = builder.ToMessageBody();
-		using SmtpClient smtp = new SmtpClient();
-		await smtp.ConnectAsync(_settings.SmtpServer, _settings.SmtpPort, SecureSocketOptions.None);
-		await smtp.SendAsync(message);
-		await smtp.DisconnectAsync(quit: true);
+			return EmailDeliveryResult.Skipped("إعدادات خادم البريد غير مكتملة: اسم الخادم أو بريد المُرسل فارغ.");
+		}
+		MailboxAddress recipient;
+		try
+		{
+			recipient = MailboxAddress.Parse(inviteDto.Email);
+		}
+		catch (ParseException)
+		{
+			return EmailDeliveryResult.Failed("بريد العضو غير صالح، فلم يُرسل الإشعار.", "MailboxAddress.Parse rejected the recipient address.");
+		}
+		try
+		{
+			MimeMessage message = new MimeMessage();
+			message.From.Add(new MailboxAddress(_settings.FromName, _settings.FromEmail));
+			message.To.Add(recipient);
+			message.Subject = "تمت إضافتك إلى " + businessName;
+			BodyBuilder builder = new BodyBuilder
+			{
+				HtmlBody = BuildMembershipNoticeHtml(businessName, inviteDto.Role)
+			};
+			message.Body = builder.ToMessageBody();
+			using SmtpClient smtp = new SmtpClient
+			{
+				Timeout = Math.Max(5, _settings.TimeoutSeconds) * 1000
+			};
+			await smtp.ConnectAsync(_settings.SmtpServer, _settings.SmtpPort, ResolveSecureSocketOptions());
+			if (!string.IsNullOrWhiteSpace(_settings.Email))
+			{
+				await smtp.AuthenticateAsync(_settings.Email, _settings.Password);
+			}
+			await smtp.SendAsync(message);
+			await smtp.DisconnectAsync(quit: true);
+			return EmailDeliveryResult.Success();
+		}
+		catch (Exception ex)
+		{
+			// التفصيل للسجل فقط؛ رسالة المستخدم لا تكشف اسم خادم ولا بيانات مصادقة.
+			Console.WriteLine("Mail delivery failed: " + ex.GetType().Name + " - " + ex.Message);
+			return EmailDeliveryResult.Failed("أُضيف العضو، لكن تعذّر إرسال إشعار البريد.", ex.Message);
+		}
+	}
+
+	/// <summary>
+	/// يحوّل إعداد <c>UseSsl</c> إلى وضع الاتصال الصحيح.
+	///
+	/// <para>كان الوضع مُثبَّتاً على <c>None</c> سابقاً فتتعذّر مخاطبة أي خادم حقيقي،
+	/// لأن خوادم البريد العامة ترفض الاتصال بلا تشفير.</para>
+	/// </summary>
+	private SecureSocketOptions ResolveSecureSocketOptions()
+	{
+		if (!_settings.UseSsl)
+		{
+			return SecureSocketOptions.None;
+		}
+		return (_settings.SmtpPort == 465) ? SecureSocketOptions.SslOnConnect : SecureSocketOptions.StartTls;
+	}
+
+	private static string BuildMembershipNoticeHtml(string businessName, string role)
+	{
+		StringBuilder html = new StringBuilder();
+		html.Append("<div dir=\"rtl\" style=\"font-family:Segoe UI,Tahoma,Arial,sans-serif;text-align:right;color:#1f2937;line-height:1.8\">");
+		html.Append("<p>مرحباً،</p>");
+		html.Append("<p>تمت إضافتك إلى منشأة <strong>").Append(WebUtility.HtmlEncode(businessName)).Append("</strong> في نظام الحسابات بدور <strong>").Append(WebUtility.HtmlEncode(RoleLabel(role))).Append("</strong>.</p>");
+		html.Append("<p>يمكنك الدخول إلى النظام باسم المستخدم أو البريد الإلكتروني المسجَّل لديك.</p>");
+		html.Append("<p style=\"color:#6b7280;font-size:13px\">إذا لم تكن تتوقّع هذه الرسالة، يمكنك تجاهلها.</p>");
+		html.Append("</div>");
+		return html.ToString();
+	}
+
+	private static string RoleLabel(string role)
+	{
+		switch ((role ?? string.Empty).Trim().ToLowerInvariant())
+		{
+		case "owner":
+			return "مالك";
+		case "partner":
+			return "شريك";
+		case "viewer":
+			return "مطّلع";
+		case "admin":
+			return "مسؤول";
+		case "staff":
+			return "موظف";
+		case "dataoperator":
+			return "مدخل بيانات";
+		case "privateviewer":
+			return "مطّلع خاص";
+		case "portfolio_manager":
+			return "مسؤول الخزنة";
+		default:
+			return role ?? string.Empty;
+		}
 	}
 
 	public async Task<bool> SendInvaiteByEmail(InviteDto inviteDto)
