@@ -37,6 +37,28 @@ internal class Program
 {
 	private static async Task Main(string[] args)
 	{
+		// ترميز المخرجات: بدونه تظهر الرسائل العربية (ومنها رسالة المفتاح الناقص
+		// عند الإقلاع) مشوّهةً في طرفية الخادم أو في ملف السجل. لا يُفشل الإقلاع
+		// إن تعذّر ضبطه، كأن تكون المخرجات معاد توجيهها.
+		try
+		{
+			Console.OutputEncoding = System.Text.Encoding.UTF8;
+		}
+		catch (Exception)
+		{
+		}
+		// توليد مفتاح توقيع جديد — يوضع قبل فحص المفتاح أدناه.
+		// لو وُضع بعده لما أمكن توليد مفتاح على خادم لم يُضبط فيه بعد،
+		// وهي الحالة التي يُحتاج فيها هذا الأمر بالضبط.
+		if (Array.IndexOf(args, "--generate-secret") >= 0)
+		{
+			byte[] secretBytes = new byte[48];
+			System.Security.Cryptography.RandomNumberGenerator.Fill(secretBytes);
+			string generatedSecret = Convert.ToBase64String(secretBytes);
+			Console.WriteLine("مفتاح توقيع جديد (ضعه في .env كما هو):");
+			Console.WriteLine("ApiSettings__Secret=" + generatedSecret);
+			return;
+		}
 		WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 		builder.Configuration.AddDotEnvFile();
 		builder.Configuration.AddUserSecrets<Program>(optional: true);
