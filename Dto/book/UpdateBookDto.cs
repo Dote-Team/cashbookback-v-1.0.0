@@ -1,8 +1,10 @@
-﻿namespace cashbook.Dto.book
+using System;
+
+namespace cashbook.Dto.book;
+
+public class UpdateBookDto
 {
-    public class UpdateBookDto
-    {
-        public string? Name { get; set; }
-        public Guid BusinessId { get; set; }
-    }
+	public string? Name { get; set; }
+
+	public Guid BusinessId { get; set; }
 }

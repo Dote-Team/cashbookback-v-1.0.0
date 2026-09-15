@@ -1,241 +1,197 @@
-﻿using cashbook.Data;
-using cashbook.Interfaces;
-using Microsoft.EntityFrameworkCore;
-using Newtonsoft.Json;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Http;
+using Microsoft.EntityFrameworkCore;
+using Newtonsoft.Json;
+using cashbook.Data;
+using cashbook.Interfaces;
+using cashbook.Models;
 
-namespace cashbook.Repositories
+namespace cashbook.Repositories;
+
+public class Repository<T> : IRepository<T> where T : class
 {
-    public class Repository<T> : IRepository<T> where T : class
-    {
-        private readonly ApplicationDbContext _db;
-        internal DbSet<T> dbSet;
+	private readonly ApplicationDbContext _db;
 
-        public Repository(ApplicationDbContext db)
-        {
-            _db = db;
-            dbSet = _db.Set<T>();
-        }
+	internal DbSet<T> dbSet;
 
-        public async Task CreateAsync(T entity)
-        {
-            await dbSet.AddAsync(entity);
-            await SaveAsync();
-        }
+	public Repository(ApplicationDbContext db)
+	{
+		_db = db;
+		dbSet = _db.Set<T>();
+	}
 
-        public async Task<T?> GetAsync(Expression<Func<T, bool>>? filter = null, bool tracked = true)
-        {
-            IQueryable<T> query = dbSet;
+	public async Task CreateAsync(T entity)
+	{
+		await dbSet.AddAsync(entity);
+		await SaveAsync();
+	}
 
-            if (!tracked)
-            {
-                query = query.AsNoTracking();
-            }
+	public async Task<T?> GetAsync(Expression<Func<T, bool>>? filter = null, bool tracked = true)
+	{
+		IQueryable<T> query = dbSet;
+		if (!tracked)
+		{
+			query = query.AsNoTracking();
+		}
+		if (filter != null)
+		{
+			query = query.Where(filter);
+		}
+		T result = await query.FirstOrDefaultAsync();
+		if (result == null)
+		{
+			return null;
+		}
+		PropertyInfo[] properties = typeof(T).GetProperties(BindingFlags.Instance | BindingFlags.Public);
+		PropertyInfo[] array = properties;
+		foreach (PropertyInfo property in array)
+		{
+			if (!(property.PropertyType == typeof(string)))
+			{
+				continue;
+			}
+			string value = property.GetValue(result) as string;
+			if (!string.IsNullOrEmpty(value) && (value.Trim().StartsWith("{") || value.Trim().StartsWith("[")))
+			{
+				try
+				{
+					property.SetValue(result, JsonConvert.DeserializeObject(value)?.ToString());
+				}
+				catch (JsonReaderException)
+				{
+				}
+			}
+		}
+		return result;
+	}
 
-            if (filter != null)
-            {
-                query = query.Where(filter);
-            }
+	public async Task<List<T>> GetAllAsync(Expression<Func<T, bool>>? filter = null)
+	{
+		IQueryable<T> query = dbSet;
+		if (filter != null)
+		{
+			query = query.Where(filter);
+		}
+		List<T> results = await query.ToListAsync();
+		foreach (T item in results)
+		{
+			PropertyInfo[] properties = typeof(T).GetProperties(BindingFlags.Instance | BindingFlags.Public);
+			PropertyInfo[] array = properties;
+			foreach (PropertyInfo property in array)
+			{
+				if (!(property.PropertyType == typeof(string)))
+				{
+					continue;
+				}
+				string value = property.GetValue(item) as string;
+				if (!string.IsNullOrEmpty(value) && (value.Trim().StartsWith("{") || value.Trim().StartsWith("[")))
+				{
+					try
+					{
+						object deserializedValue = JsonConvert.DeserializeObject(value);
+						property.SetValue(item, deserializedValue);
+					}
+					catch (JsonReaderException)
+					{
+					}
+				}
+			}
+		}
+		return results;
+	}
 
-            var result = await query.FirstOrDefaultAsync();
+	public async Task RemoveAsync(T entity)
+	{
+		dbSet.Remove(entity);
+		await SaveAsync();
+	}
 
-            // If no result is found, return null
-            if (result == null)
-            {
-                return null;
-            }
+	public async Task<string?> GetUserRoleAsync(Guid userId, Guid businessId)
+	{
+		return await (from bu in _db.BusinessUsers
+			where bu.UserId == userId && bu.BusinessId == businessId
+			select bu.Role.ToLower()).FirstOrDefaultAsync();
+	}
 
-            // Loop through each property of the result and deserialize JSON string properties
-            var properties = typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance);
+	public async Task SaveAsync()
+	{
+		await _db.SaveChangesAsync();
+	}
 
-            foreach (var property in properties)
-            {
-                // Check if the property type is string and contains JSON data
-                if (property.PropertyType == typeof(string))
-                {
-                    var value = property.GetValue(result) as string;
-                    if (!string.IsNullOrEmpty(value) && (value.Trim().StartsWith("{") || value.Trim().StartsWith("[")))
-                    {
-                        // Try to deserialize JSON and set it back to the property
-                        try
-                        {
-                            var deserializedValue = JsonConvert.DeserializeObject(value);
-                            property.SetValue(result, deserializedValue?.ToString());
-                        }
-                        catch (JsonReaderException)
-                        {
-                            // Handle JSON deserialization error if necessary
-                            continue;
-                        }
-                    }
-                }
-            }
+	public async Task UpdateAsync(T entity)
+	{
+		dbSet.Update(entity);
+		await SaveAsync();
+	}
 
-            return result;
-        }
-        public async Task<List<T>> GetAllAsync(Expression<Func<T, bool>>? filter = null)
-        {
-            IQueryable<T> query = dbSet;
+	public async Task<List<T>> GetPaginatedAsync(int? skip = null, int? take = null, Expression<Func<T, bool>>? filter = null)
+	{
+		int currentPage = skip ?? 1;
+		int currentSize = take ?? 25;
+		IQueryable<T> query = dbSet;
+		if (filter != null)
+		{
+			query = query.Where(filter);
+		}
+		query = query.Skip((currentPage - 1) * currentSize).Take(currentSize);
+		return await query.ToListAsync();
+	}
 
-            if (filter != null)
-            {
-                query = query.Where(filter);
-            }
+	public async Task<int> GetCountAsync(Expression<Func<T, bool>>? filter = null)
+	{
+		IQueryable<T> query = dbSet;
+		if (filter != null)
+		{
+			query = query.Where(filter);
+		}
+		return await query.CountAsync();
+	}
 
-            var results = await query.ToListAsync();
-
-            // Loop through each result and deserialize JSON string properties
-            foreach (var item in results)
-            {
-                // Get all properties of the item
-                var properties = typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance);
-
-                foreach (var property in properties)
-                {
-                    // Check if the property type is string and contains JSON data
-                    if (property.PropertyType == typeof(string))
-                    {
-                        var value = property.GetValue(item) as string;
-                        if (!string.IsNullOrEmpty(value) && (value.Trim().StartsWith("{") || value.Trim().StartsWith("[")))
-                        {
-                            // Try to deserialize JSON and set it back to the property
-                            try
-                            {
-                                var deserializedValue = JsonConvert.DeserializeObject(value);
-                                property.SetValue(item, deserializedValue);
-                            }
-                            catch (JsonReaderException)
-                            {
-                                // Handle JSON deserialization error if necessary
-                                continue;
-                            }
-                        }
-                    }
-                }
-            }
-
-            return results;
-        }
-
-        public async Task RemoveAsync(T entity)
-        {
-            dbSet.Remove(entity);
-            await SaveAsync();
-        }
-
-        public async Task<string?> GetUserRoleAsync(Guid userId, Guid businessId)
-        {
-            return await _db.BusinessUsers
-                .Where(bu => bu.UserId == userId && bu.BusinessId == businessId)
-                .Select(bu => bu.Role.ToLower())
-                .FirstOrDefaultAsync();
-        }
-
-
-
-        public async Task SaveAsync()
-        {
-            await _db.SaveChangesAsync();
-        }
-
-        public async Task UpdateAsync(T entity)
-        {
-            dbSet.Update(entity);
-            await SaveAsync();
-        }
-
-        public async Task<List<T>> GetPaginatedAsync(int? skip = null, int? take = null, Expression<Func<T, bool>>? filter = null)
-        {
-            int currentPage = skip ?? 1;
-            int currentSize = take ?? 25;
-
-
-            IQueryable<T> query = dbSet;
-
-
-            if (filter != null)
-            {
-                query = query.Where(filter);
-            }
-
-            query = query.Skip((currentPage - 1) * currentSize)
-                         .Take(currentSize);
-
-            return await query.ToListAsync();
-        }
-
-        public async Task<int> GetCountAsync(Expression<Func<T, bool>>? filter = null)
-        {
-            IQueryable<T> query = dbSet;
-
-            if (filter != null)
-            {
-                query = query.Where(filter);
-            }
-
-            return await query.CountAsync();
-        }
-
-
-        public async Task<List<string>> UploadFilesAsync(IEnumerable<IFormFile> files, string uploadPath)
-        {
-            if (files == null || !files.Any())
-            {
-                throw new ArgumentException("No files provided for upload.");
-            }
-
-            List<string> fileNames = new List<string>();
-
-            try
-            {
-                foreach (var file in files)
-                {
-                    if (file.Length > 0)
-                    {
-                        // Ensure the upload path
-                        // s, if not, create it
-                        if (!Directory.Exists(uploadPath))
-                        {
-                            Directory.CreateDirectory(uploadPath);
-                        }
-
-                        // Generate a unique filename for each file to avoid conflicts
-                        string uniqueFileName = Guid.NewGuid().ToString() + Path.GetExtension(file.FileName);
-
-                        // Combine the path with the file name
-                        string filePath = Path.Combine(uploadPath, uniqueFileName);
-
-                        // Save the file to the specified path
-                        using (var stream = new FileStream(filePath, FileMode.Create))
-                        {
-                            await file.CopyToAsync(stream);
-                        }
-
-                        // Add the unique file name to the list (to save in DB later)
-                        fileNames.Add(uniqueFileName);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                // Remove any files that were uploaded before the error occurred
-                foreach (var fileName in fileNames)
-                {
-                    string filePath = Path.Combine(uploadPath, fileName);
-                    if (File.Exists(filePath))
-                    {
-                        File.Delete(filePath);
-                    }
-                }
-                throw new InvalidOperationException("Error occurred while uploading files", ex);
-            }
-
-            // Return the file names as a comma-separated string
-            return fileNames;
-        }
-
-
-
-    }
+	public async Task<List<string>> UploadFilesAsync(IEnumerable<IFormFile> files, string uploadPath)
+	{
+		if (files == null || !files.Any())
+		{
+			throw new ArgumentException("No files provided for upload.");
+		}
+		List<string> fileNames = new List<string>();
+		try
+		{
+			foreach (IFormFile file in files)
+			{
+				if (file.Length > 0)
+				{
+					if (!Directory.Exists(uploadPath))
+					{
+						Directory.CreateDirectory(uploadPath);
+					}
+					string uniqueFileName = Guid.NewGuid().ToString() + Path.GetExtension(file.FileName);
+					string filePath = Path.Combine(uploadPath, uniqueFileName);
+					using (FileStream stream = new FileStream(filePath, FileMode.Create))
+					{
+						await file.CopyToAsync(stream);
+					}
+					fileNames.Add(uniqueFileName);
+				}
+			}
+			return fileNames;
+		}
+		catch (Exception innerException)
+		{
+			foreach (string fileName in fileNames)
+			{
+				string filePath2 = Path.Combine(uploadPath, fileName);
+				if (File.Exists(filePath2))
+				{
+					File.Delete(filePath2);
+				}
+			}
+			throw new InvalidOperationException("Error occurred while uploading files", innerException);
+		}
+	}
 }

@@ -1,11 +1,11 @@
-﻿using cashbook.Dto.user;
-using cashbook.Repositories;
+using System.Threading.Tasks;
+using cashbook.Dto.user;
 
-namespace cashbook.Interfaces
+namespace cashbook.Interfaces;
+
+public interface IEmailService
 {
-    public interface IEmailService 
-    {
-        Task SendInvitationEmailAsync(string recipientEmail, string invitationLink);
-        Task <bool>SendInvaiteByEmail(InviteDto inviteDto);
-    }
+	Task SendInvitationEmailAsync(string recipientEmail, string invitationLink);
+
+	Task<bool> SendInvaiteByEmail(InviteDto inviteDto);
 }

@@ -1,17 +1,17 @@
-﻿using cashbook.Data;
+using Microsoft.Extensions.Configuration;
+using cashbook.Data;
 using cashbook.Interfaces;
 using cashbook.Models;
 
-namespace cashbook.Repositories
+namespace cashbook.Repositories;
+
+public class SettingRepository : Repository<Setting>, ISettingRepository, IRepository<Setting>
 {
-    public class SettingRepository : Repository<Setting>, ISettingRepository
-    {
+	private readonly ApplicationDbContext _context;
 
-        private readonly ApplicationDbContext _context;
-        public SettingRepository(ApplicationDbContext context, IConfiguration configuration) : base(context)
-        {
-            _context = context;
-
-        }
-    }
+	public SettingRepository(ApplicationDbContext context, IConfiguration configuration)
+		: base(context)
+	{
+		_context = context;
+	}
 }

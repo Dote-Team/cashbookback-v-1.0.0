@@ -1,8 +1,10 @@
-﻿namespace cashbook.Dto.category
+using System;
+
+namespace cashbook.Dto.category;
+
+public class CreateCategoryDto
 {
-    public class CreateCategoryDto
-    {
-        public string Name { get; set; }
-        public Guid BusinessId { get; set; }
-    }
+	public string Name { get; set; }
+
+	public Guid BusinessId { get; set; }
 }

@@ -4,6 +4,13 @@
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <NoWarn>$(NoWarn);CS0105;CS8618;CS8603;CS8604;CS8601;CS8602;CS8600;CS8073;CS1998;CS0168;CS0219</NoWarn>
+    <!--
+      الأسرار تُقرأ من مخزن المستخدم المحلي (تطوير) أو من ملف .env (خادم)،
+      ولا تُكتب داخل appsettings.json أبداً.
+      إدارة السر:  dotnet user-secrets set "ApiSettings:Secret" "<قيمة>"
+    -->
+    <UserSecretsId>cashbook-api-secrets</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>
@@ -25,6 +32,15 @@
 
   <ItemGroup>
     <Folder Include="wwwroot\" />
+  </ItemGroup>
+
+  <!--
+    ملف .env (الأسرار وإعدادات البيئة) يُنسخ مع البناء والنشر إن وُجد.
+    الشرط Exists إلزامي: الملف مُستثنى من Git، فبدونه يفشل البناء على أي نسخة
+    مستنسخة حديثاً.
+  -->
+  <ItemGroup Condition="Exists('.env')">
+    <Content Include=".env" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

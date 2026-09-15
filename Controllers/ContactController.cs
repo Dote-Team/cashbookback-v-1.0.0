@@ -1,232 +1,201 @@
-﻿using AutoMapper;
-using cashbook.Dto;
-using cashbook.Models;
-using cashbook.Interfaces;
+using System;
+using System.Collections.Generic;
+using System.Net;
+using System.Threading.Tasks;
+using AutoMapper;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.Linq.Expressions;
-using System.Net;
-using cashbook.Dto.contact;
-using Microsoft.EntityFrameworkCore;
-using System.Security.Claims;
-using cashbook.Data;
 using Swashbuckle.AspNetCore.Annotations;
+using cashbook.Data;
+using cashbook.Dto;
+using cashbook.Dto.contact;
+using cashbook.Interfaces;
+using cashbook.Models;
 
-namespace cashbook.Controllers
+namespace cashbook.Controllers;
+
+[Route("API/[Controller]")]
+[ApiController]
+public class ContactController : ControllerBase
 {
-    [Route("API/[Controller]")]
-    [ApiController]
-    public class ContactController : ControllerBase
-    {
-        protected APIResponse _response;
-        private readonly IMapper _mapper;
-        private readonly IContactRepository _contactRepository;
-        private readonly ApplicationDbContext _context;
+	protected APIResponse _response;
 
-        public ContactController(IContactRepository contactRepository, IMapper mapper, ApplicationDbContext context)
-        {
-            _contactRepository = contactRepository;
-            _response = new();
-            _mapper = mapper;
-            _context = context;
-        }
+	private readonly IMapper _mapper;
 
-        // GET: API/Contact
-        [HttpGet]
-        [Authorize]
+	private readonly IContactRepository _contactRepository;
 
-        [ProducesResponseType(StatusCodes.Status403Forbidden)]
-        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-        [ProducesResponseType(StatusCodes.Status200OK)]
-        [SwaggerOperation(Summary = "all")]
+	private readonly ApplicationDbContext _context;
 
-        public async Task<ActionResult<APIResponse>> GetPaginatedContacts(
-      [FromQuery] Guid businessId,
-      [FromQuery] int? skip = 1,
-      [FromQuery] int? take = 25,
-      [FromQuery] string? search = null)
-        {
-            try
-            {
-               
+	public ContactController(IContactRepository contactRepository, IMapper mapper, ApplicationDbContext context)
+	{
+		_contactRepository = contactRepository;
+		_response = new APIResponse();
+		_mapper = mapper;
+		_context = context;
+	}
 
-                var paginatedContacts = await _contactRepository.GetContactsAsync(
-                    businessId,
-                    skip,
-                    take,
-                    search);
+	[HttpGet]
+	[Authorize]
+	[ProducesResponseType(403)]
+	[ProducesResponseType(401)]
+	[ProducesResponseType(200)]
+	[SwaggerOperation(null, null, Summary = "all")]
+	public async Task<ActionResult<APIResponse>> GetPaginatedContacts([FromQuery] Guid businessId, [FromQuery] int? skip = 1, [FromQuery] int? take = 25, [FromQuery] string? search = null)
+	{
+		try
+		{
+			PaginatedResponse<ContactDto> paginatedContacts = await _contactRepository.GetContactsAsync(businessId, skip, take, search);
+			PaginatedResponse<ContactDto> paginatedResponse = new PaginatedResponse<ContactDto>
+			{
+				Data = paginatedContacts.Data,
+				TotalRecords = paginatedContacts.TotalRecords,
+				Skip = paginatedContacts.Skip,
+				Take = paginatedContacts.Take
+			};
+			_response.Result = paginatedResponse;
+			_response.StatusCode = HttpStatusCode.OK;
+			_response.IsSuccess = true;
+			return Ok(_response);
+		}
+		catch (UnauthorizedAccessException ex)
+		{
+			UnauthorizedAccessException uaex = ex;
+			_response.IsSuccess = false;
+			_response.StatusCode = HttpStatusCode.Forbidden;
+			_response.ErrorMessages = new List<string> { uaex.Message };
+			return StatusCode(403, _response);
+		}
+		catch (Exception ex2)
+		{
+			Exception ex3 = ex2;
+			_response.IsSuccess = false;
+			_response.ErrorMessages = new List<string> { ex3.ToString() };
+			return StatusCode(500, _response);
+		}
+	}
 
-                var paginatedResponse = new PaginatedResponse<ContactDto>
-                {
-                    Data = paginatedContacts.Data,
-                    TotalRecords = paginatedContacts.TotalRecords,
-                    Skip = paginatedContacts.Skip,
-                    Take = paginatedContacts.Take
-                };
+	[HttpGet("{id:Guid}", Name = "GetContact")]
+	[Authorize]
+	[ProducesResponseType(403)]
+	[ProducesResponseType(401)]
+	[ProducesResponseType(200)]
+	[ProducesResponseType(404)]
+	[ProducesResponseType(400)]
+	public async Task<ActionResult<APIResponse>> GetContact(Guid id)
+	{
+		try
+		{
+			Contact contact = await _contactRepository.GetAsync((Contact u) => u.Id == id);
+			if (contact == null)
+			{
+				_response.StatusCode = HttpStatusCode.NotFound;
+				return NotFound(_response);
+			}
+			_response.Result = contact;
+			_response.StatusCode = HttpStatusCode.OK;
+			return Ok(_response);
+		}
+		catch (Exception ex)
+		{
+			Exception ex2 = ex;
+			_response.IsSuccess = false;
+			_response.ErrorMessages = new List<string> { ex2.ToString() };
+		}
+		return _response;
+	}
 
-                _response.Result = paginatedResponse;
-                _response.StatusCode = HttpStatusCode.OK;
-                _response.IsSuccess = true;
+	[HttpPost]
+	[Authorize]
+	[ProducesResponseType(403)]
+	[ProducesResponseType(401)]
+	[ProducesResponseType(201)]
+	[ProducesResponseType(500)]
+	[ProducesResponseType(400)]
+	public async Task<ActionResult<APIResponse>> CreateContact([FromBody] CreateContactDto createContactDto)
+	{
+		try
+		{
+			if (createContactDto == null)
+			{
+				return BadRequest(createContactDto);
+			}
+			Contact contact = _mapper.Map<Contact>(createContactDto);
+			await _contactRepository.CreateAsync(contact);
+			_response.Result = new { contact.Id };
+			_response.StatusCode = HttpStatusCode.Created;
+			_response.IsSuccess = true;
+			return _response;
+		}
+		catch (Exception ex)
+		{
+			Exception ex2 = ex;
+			_response.IsSuccess = false;
+			_response.ErrorMessages = new List<string> { ex2.ToString() };
+		}
+		return _response;
+	}
 
-                return Ok(_response);
-            }
-            catch (UnauthorizedAccessException uaex)
-            {
-                _response.IsSuccess = false;
-                _response.StatusCode = HttpStatusCode.Forbidden;
-                _response.ErrorMessages = new List<string> { uaex.Message };
-                return StatusCode(StatusCodes.Status403Forbidden, _response);
-            }
-            catch (Exception ex)
-            {
-                _response.IsSuccess = false;
-                _response.ErrorMessages = new List<string> { ex.ToString() };
-                return StatusCode(StatusCodes.Status500InternalServerError, _response);
-            }
-        }
+	[HttpDelete("{id:Guid}", Name = "DeleteContact")]
+	[Authorize]
+	[ProducesResponseType(204)]
+	[ProducesResponseType(404)]
+	[ProducesResponseType(403)]
+	[ProducesResponseType(401)]
+	[ProducesResponseType(400)]
+	public async Task<ActionResult<APIResponse>> DeleteContact(Guid id)
+	{
+		try
+		{
+			if (id == Guid.Empty)
+			{
+				return BadRequest("Invalid contact ID.");
+			}
+			Contact contact = await _contactRepository.GetAsync((Contact u) => u.Id == id);
+			if (contact == null)
+			{
+				return NotFound("Contact not found.");
+			}
+			await _contactRepository.RemoveAsync(contact);
+			_response.StatusCode = HttpStatusCode.NoContent;
+			_response.IsSuccess = true;
+			return Ok(_response);
+		}
+		catch (Exception ex)
+		{
+			Exception ex2 = ex;
+			_response.IsSuccess = false;
+			_response.ErrorMessages = new List<string> { ex2.Message };
+			return StatusCode(500, _response);
+		}
+	}
 
-        // GET: API/Contact/{id}
-        [HttpGet("{id:Guid}", Name = "GetContact")]
-        [Authorize]
-
-        [ProducesResponseType(StatusCodes.Status403Forbidden)]
-        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-        [ProducesResponseType(StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status404NotFound)]
-        [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        public async Task<ActionResult<APIResponse>> GetContact(Guid id)
-        {
-            try
-            {
-                if (id == null)
-                {
-                    _response.StatusCode = HttpStatusCode.BadRequest;
-                    return BadRequest(_response);
-                }
-
-                var contact = await _contactRepository.GetAsync(u => u.Id == id);
-                if (contact == null)
-                {
-                    _response.StatusCode = HttpStatusCode.NotFound;
-                    return NotFound(_response);
-                }
-
-                _response.Result = contact;
-                _response.StatusCode = HttpStatusCode.OK;
-                return Ok(_response);
-            }
-            catch (Exception ex)
-            {
-                _response.IsSuccess = false;
-                _response.ErrorMessages = new List<string>() { ex.ToString() };
-            }
-            return _response;
-        }
-
-        // POST: API/Contact
-        [HttpPost]
-        [Authorize]
-
-        [ProducesResponseType(StatusCodes.Status403Forbidden)]
-        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-        [ProducesResponseType(StatusCodes.Status201Created)]
-        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        public async Task<ActionResult<APIResponse>> CreateContact([FromBody] CreateContactDto createContactDto)
-        {
-            try
-            {
-
-                if (createContactDto == null)
-                {
-                    return BadRequest(createContactDto);
-                }
-                var contact = _mapper.Map<Contact>(createContactDto);
-
-                await _contactRepository.CreateAsync(contact);
-                _response.Result = new { Id = contact.Id };
-                _response.StatusCode = HttpStatusCode.Created;
-                _response.IsSuccess = true;
-
-                return _response;
-            }
-            catch (Exception ex)
-            {
-                _response.IsSuccess = false;
-                _response.ErrorMessages = new List<string>() { ex.ToString() };
-            }
-            return _response;
-        }
-
-        [HttpDelete("{id:Guid}", Name = "DeleteContact")]
-        [Authorize]
-
-        [ProducesResponseType(StatusCodes.Status204NoContent)]
-        [ProducesResponseType(StatusCodes.Status404NotFound)]
-        [ProducesResponseType(StatusCodes.Status403Forbidden)]
-        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-        [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        public async Task<ActionResult<APIResponse>> DeleteContact(Guid id)
-        {
-            try
-            {
-                if (id == Guid.Empty)
-                {
-                    return BadRequest("Invalid contact ID.");
-                }
-
-                var contact = await _contactRepository.GetAsync(u => u.Id == id);
-                if (contact == null)
-                {
-                    return NotFound("Contact not found.");
-                }
-
-
-                await _contactRepository.RemoveAsync(contact);
-
-                _response.StatusCode = HttpStatusCode.NoContent;
-                _response.IsSuccess = true;
-                return Ok(_response);
-            }
-            catch (Exception ex)
-            {
-                _response.IsSuccess = false;
-                _response.ErrorMessages = new List<string> { ex.Message };
-                return StatusCode(500, _response);
-            }
-        }
-
-
-        [HttpPut("{id:Guid}", Name = "UpdateContact")]
-        [Authorize]
-
-        [ProducesResponseType(StatusCodes.Status204NoContent)]
-        [ProducesResponseType(StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        public async Task<ActionResult<APIResponse>> UpdateContact([FromRoute] Guid id, [FromBody] UpdateContactDto updateContactDto)
-        {
-            try
-            {
-                var existingContact = await _contactRepository.GetAsync(u => u.Id == id);
-                _mapper.Map(updateContactDto, existingContact);
-
-                if (updateContactDto == null || existingContact == null)
-                {
-                    return BadRequest();
-                }
-
-                await _contactRepository.UpdateAsync(existingContact);
-                _response.Result = existingContact;
-                _response.StatusCode = HttpStatusCode.NoContent;
-                _response.IsSuccess = true;
-                return Ok(_response);
-            }
-            catch (Exception ex)
-            {
-                _response.IsSuccess = false;
-                _response.ErrorMessages = new List<string>() { ex.ToString() };
-            }
-            return _response;
-        }
-    }
+	[HttpPut("{id:Guid}", Name = "UpdateContact")]
+	[Authorize]
+	[ProducesResponseType(204)]
+	[ProducesResponseType(200)]
+	[ProducesResponseType(400)]
+	public async Task<ActionResult<APIResponse>> UpdateContact([FromRoute] Guid id, [FromBody] UpdateContactDto updateContactDto)
+	{
+		try
+		{
+			Contact existingContact = await _contactRepository.GetAsync((Contact u) => u.Id == id);
+			_mapper.Map(updateContactDto, existingContact);
+			if (updateContactDto == null || existingContact == null)
+			{
+				return BadRequest();
+			}
+			await _contactRepository.UpdateAsync(existingContact);
+			_response.Result = existingContact;
+			_response.StatusCode = HttpStatusCode.NoContent;
+			_response.IsSuccess = true;
+			return Ok(_response);
+		}
+		catch (Exception ex)
+		{
+			Exception ex2 = ex;
+			_response.IsSuccess = false;
+			_response.ErrorMessages = new List<string> { ex2.ToString() };
+		}
+		return _response;
+	}
 }

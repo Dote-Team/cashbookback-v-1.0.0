@@ -1,12 +1,10 @@
-﻿using System.ComponentModel.DataAnnotations.Schema;
-using System.ComponentModel.DataAnnotations;
+using System;
 
-namespace cashbook.Dto.business
+namespace cashbook.Dto.business;
+
+public class UpdateBusinessDto
 {
-    public class UpdateBusinessDto
-    {
-        
-        public string? Name { get; set; }
-        public DateTime UpdatedAt { get; set; } = DateTime.Now;
-    }
+	public string? Name { get; set; }
+
+	public DateTime UpdatedAt { get; set; } = DateTime.Now;
 }
