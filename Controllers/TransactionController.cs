@@ -39,6 +39,62 @@ public class TransactionController : ControllerBase
 		_context = context;
 	}
 
+	/// <summary>نتيجة فحص صلاحية مستخدم على خزنة محددة.</summary>
+	private enum WalletAccess
+	{
+		Granted,
+		WalletNotFound,
+		Forbidden
+	}
+
+	/// <summary>
+	/// يفحص صلاحية المستدعي على خزنة بعينها، ويستخرج المنشأة من الخزنة نفسها.
+	///
+	/// لا يُعتمد على معامل businessId القادم من الطلب في التحقق إطلاقاً.
+	/// الاعتماد عليه كان يسمح لمستخدم في منشأة أن يضيف أو يعدّل أو يحذف في خزائن
+	/// منشأة أخرى، بمجرد إرسال معرّف منشأته هو؛ لأن الفحص كان يقع على ما يقوله
+	/// المستدعي، لا على الخزنة التي ستنفَّذ عليها العملية.
+	///
+	/// ويُفحص نطاق الخزنة (BookIds) للأدوار المقيّدة في الكتابة كما يُفحص في
+	/// القراءة، وإلا كتب عضو مكلَّف بخزنة في خزائن زملائه في المنشأة نفسها.
+	/// </summary>
+	private async Task<WalletAccess> CheckWalletAsync(Guid userId, Guid walletId, string[] allowedRoles)
+	{
+		if (walletId == Guid.Empty)
+		{
+			return WalletAccess.WalletNotFound;
+		}
+		Book wallet = await _context.Books.AsNoTracking().FirstOrDefaultAsync((Book b) => b.Id == walletId);
+		if (wallet == null)
+		{
+			return WalletAccess.WalletNotFound;
+		}
+		string role = await _transactionRepository.GetUserRoleAsync(userId, wallet.BusinessId);
+		if (role == null || !Enumerable.Contains(allowedRoles, role.ToLower()))
+		{
+			return WalletAccess.Forbidden;
+		}
+		if (Roles.IsBookScoped(role))
+		{
+			List<Guid> allowedBooks = await (from bu in _context.BusinessUsers
+				where bu.UserId == userId && bu.BusinessId == wallet.BusinessId
+				select bu.BookIds).FirstOrDefaultAsync();
+			if (allowedBooks == null || !allowedBooks.Contains(walletId))
+			{
+				return WalletAccess.Forbidden;
+			}
+		}
+		return WalletAccess.Granted;
+	}
+
+	private ActionResult<APIResponse> WalletDenied(WalletAccess access, string message)
+	{
+		_response.IsSuccess = false;
+		_response.StatusCode = ((access == WalletAccess.WalletNotFound) ? HttpStatusCode.NotFound : HttpStatusCode.Forbidden);
+		_response.ErrorMessages = new List<string> { message };
+		return StatusCode((int)_response.StatusCode, _response);
+	}
+
 	[HttpGet]
 	[Authorize]
 	[ProducesResponseType(403)]
@@ -196,16 +252,13 @@ public class TransactionController : ControllerBase
 	{
 		try
 		{
-			string[] allowedRoles = Roles.Writers;
-			string userIdStr = base.User.FindFirst("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier")?.Value;
-			Guid userId = Guid.Parse(userIdStr);
-			string userRole = await _transactionRepository.GetUserRoleAsync(userId, businessId);
-			if (userRole == null || !Enumerable.Contains(allowedRoles, userRole.ToLower()))
+			Guid? callerId = base.User.GetUserId();
+			if (!callerId.HasValue)
 			{
-				_response.StatusCode = HttpStatusCode.Forbidden;
+				_response.StatusCode = HttpStatusCode.Unauthorized;
 				_response.IsSuccess = false;
-				_response.ErrorMessages = new List<string> { "You do not have permission to create transaction for this business." };
-				return Forbid();
+				_response.ErrorMessages = new List<string> { "Invalid token." };
+				return Unauthorized(_response);
 			}
 			if (dto == null)
 			{
@@ -214,6 +267,20 @@ public class TransactionController : ControllerBase
 				_response.ErrorMessages = new List<string> { "Invalid data." };
 				return BadRequest(_response);
 			}
+			if (dto.BookId == Guid.Empty)
+			{
+				_response.StatusCode = HttpStatusCode.BadRequest;
+				_response.IsSuccess = false;
+				_response.ErrorMessages = new List<string> { "الخزنة غير محددة." };
+				return BadRequest(_response);
+			}
+			// المنشأة تُستخرج من الخزنة نفسها، ومعامل businessId القادم من الطلب لا يُعتمد عليه.
+			WalletAccess access = await CheckWalletAsync(callerId.Value, dto.BookId, Roles.Writers);
+			if (access != WalletAccess.Granted)
+			{
+				return WalletDenied(access, "لا تملك صلاحية إضافة حركة في هذه الخزنة.");
+			}
+			Guid userId = callerId.Value;
 			List<string> validationErrors = TransactionValidator.ValidateCreate(dto);
 			if (validationErrors.Any())
 			{
@@ -259,16 +326,13 @@ public class TransactionController : ControllerBase
 	{
 		try
 		{
-			string[] allowedRoles = Roles.Management;
-			string userIdStr = base.User.FindFirst("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier")?.Value;
-			Guid userId = Guid.Parse(userIdStr);
-			string userRole = await _transactionRepository.GetUserRoleAsync(userId, businessId);
-			if (userRole == null || !Enumerable.Contains(allowedRoles, userRole.ToLower()))
+			Guid? callerId = base.User.GetUserId();
+			if (!callerId.HasValue)
 			{
-				_response.StatusCode = HttpStatusCode.Forbidden;
+				_response.StatusCode = HttpStatusCode.Unauthorized;
 				_response.IsSuccess = false;
-				_response.ErrorMessages = new List<string> { "You do not have permission to view books for this business." };
-				return Forbid();
+				_response.ErrorMessages = new List<string> { "Invalid token." };
+				return Unauthorized(_response);
 			}
 			if (id == Guid.Empty)
 			{
@@ -277,12 +341,19 @@ public class TransactionController : ControllerBase
 				_response.ErrorMessages = new List<string> { "Invalid transaction ID." };
 				return BadRequest(_response);
 			}
-			if (await _transactionRepository.GetAsync((Transaction u) => u.Id == id) == null)
+			Transaction target = await _transactionRepository.GetAsync((Transaction u) => u.Id == id);
+			if (target == null)
 			{
 				_response.StatusCode = HttpStatusCode.NotFound;
 				_response.IsSuccess = false;
 				_response.ErrorMessages = new List<string> { "Transaction not found." };
 				return NotFound(_response);
+			}
+			// الفحص واقع على خزنة الحركة نفسها، لا على منشأة يرسلها المستدعي.
+			WalletAccess access = await CheckWalletAsync(callerId.Value, target.BookId, Roles.Management);
+			if (access != WalletAccess.Granted)
+			{
+				return WalletDenied(access, "لا تملك صلاحية حذف حركة من هذه الخزنة.");
 			}
 			if (!(await _transactionRepository.DeleteTransactionAsync(id)))
 			{
@@ -316,16 +387,13 @@ public class TransactionController : ControllerBase
 	{
 		try
 		{
-			string[] allowedRoles = Roles.Management;
-			string userIdStr = base.User.FindFirst("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier")?.Value;
-			Guid userId = Guid.Parse(userIdStr);
-			string userRole = await _transactionRepository.GetUserRoleAsync(userId, businessId);
-			if (userRole == null || !Enumerable.Contains(allowedRoles, userRole.ToLower()))
+			Guid? callerId = base.User.GetUserId();
+			if (!callerId.HasValue)
 			{
-				_response.StatusCode = HttpStatusCode.Forbidden;
+				_response.StatusCode = HttpStatusCode.Unauthorized;
 				_response.IsSuccess = false;
-				_response.ErrorMessages = new List<string> { "You do not have permission to update transaction for this business." };
-				return StatusCode(403, _response);
+				_response.ErrorMessages = new List<string> { "Invalid token." };
+				return Unauthorized(_response);
 			}
 			if (updateTransactionDto == null)
 			{
@@ -341,6 +409,12 @@ public class TransactionController : ControllerBase
 				_response.IsSuccess = false;
 				_response.ErrorMessages = new List<string> { "Transaction not found." };
 				return NotFound(_response);
+			}
+			// الفحص واقع على خزنة الحركة نفسها، لا على منشأة يرسلها المستدعي.
+			WalletAccess access = await CheckWalletAsync(callerId.Value, existingTransaction.BookId, Roles.Management);
+			if (access != WalletAccess.Granted)
+			{
+				return WalletDenied(access, "لا تملك صلاحية تعديل حركة في هذه الخزنة.");
 			}
 			List<string> validationErrors = TransactionValidator.ValidateUpdate(updateTransactionDto, existingTransaction, out ResolvedTransactionValues _);
 			if (validationErrors.Any())
@@ -383,22 +457,13 @@ public class TransactionController : ControllerBase
 	{
 		try
 		{
-			string[] allowedRoles = Roles.TransactionDuplicate;
-			string userIdStr = base.User.FindFirst("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier")?.Value;
-			if (!Guid.TryParse(userIdStr, out var userId))
+			Guid? callerId = base.User.GetUserId();
+			if (!callerId.HasValue)
 			{
 				_response.StatusCode = HttpStatusCode.Unauthorized;
 				_response.IsSuccess = false;
 				_response.ErrorMessages = new List<string> { "Invalid user ID." };
 				return Unauthorized(_response);
-			}
-			string userRole = await _transactionRepository.GetUserRoleAsync(userId, businessId);
-			if (userRole == null || !Enumerable.Contains(allowedRoles, userRole.ToLower()))
-			{
-				_response.StatusCode = HttpStatusCode.Forbidden;
-				_response.IsSuccess = false;
-				_response.ErrorMessages = new List<string> { "You do not have permission to duplicate this transaction." };
-				return Forbid();
 			}
 			if (id == Guid.Empty || targetBookId == Guid.Empty)
 			{
@@ -406,6 +471,42 @@ public class TransactionController : ControllerBase
 				_response.IsSuccess = false;
 				_response.ErrorMessages = new List<string> { "Transaction ID or Target Book ID is invalid." };
 				return BadRequest(_response);
+			}
+			Transaction source = await _transactionRepository.GetAsync((Transaction t) => t.Id == id);
+			if (source == null)
+			{
+				_response.StatusCode = HttpStatusCode.NotFound;
+				_response.IsSuccess = false;
+				_response.ErrorMessages = new List<string> { "Transaction not found." };
+				return NotFound(_response);
+			}
+			// الخزنتان تُفحصان: المصدر والهدف، وكلتاهما في منشأة الخزنة نفسها.
+			WalletAccess sourceAccess = await CheckWalletAsync(callerId.Value, source.BookId, Roles.TransactionDuplicate);
+			if (sourceAccess != WalletAccess.Granted)
+			{
+				return WalletDenied(sourceAccess, "لا تملك صلاحية نسخ حركة من هذه الخزنة.");
+			}
+			Book sourceWallet = await _context.Books.AsNoTracking().FirstOrDefaultAsync((Book b) => b.Id == source.BookId);
+			Book targetWallet = await _context.Books.AsNoTracking().FirstOrDefaultAsync((Book b) => b.Id == targetBookId);
+			if (sourceWallet == null || targetWallet == null)
+			{
+				_response.StatusCode = HttpStatusCode.NotFound;
+				_response.IsSuccess = false;
+				_response.ErrorMessages = new List<string> { "الخزنة الهدف غير موجودة." };
+				return NotFound(_response);
+			}
+			// النسخ بين منشأتين مختلفتين يُرفض: حركة منشأة لا يجوز أن تُدخل في دفاتر منشأة أخرى.
+			if (targetWallet.BusinessId != sourceWallet.BusinessId)
+			{
+				_response.StatusCode = HttpStatusCode.Forbidden;
+				_response.IsSuccess = false;
+				_response.ErrorMessages = new List<string> { "الخزنة الهدف لا تنتمي إلى المنشأة نفسها." };
+				return StatusCode(403, _response);
+			}
+			WalletAccess targetAccess = await CheckWalletAsync(callerId.Value, targetBookId, Roles.TransactionDuplicate);
+			if (targetAccess != WalletAccess.Granted)
+			{
+				return WalletDenied(targetAccess, "لا تملك صلاحية النسخ إلى هذه الخزنة.");
 			}
 			Guid newTransactionId = await _transactionRepository.DuplicateTransactionToAnotherBookAsync(id, targetBookId);
 			_response.IsSuccess = true;

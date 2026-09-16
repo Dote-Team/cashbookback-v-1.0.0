@@ -183,24 +183,31 @@ public class BookController : ControllerBase
 	{
 		try
 		{
-			string[] allowedRoles = Roles.Management;
-			string userIdStr = base.User.FindFirst("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier")?.Value;
-			Guid userId = Guid.Parse(userIdStr);
-			string userRole = await _bookRepository.GetUserRoleAsync(userId, businessId);
-			if (userRole == null || !Enumerable.Contains(allowedRoles, userRole.ToLower()))
+			Guid? callerId = base.User.GetUserId();
+			if (!callerId.HasValue)
 			{
-				_response.StatusCode = HttpStatusCode.Forbidden;
+				_response.StatusCode = HttpStatusCode.Unauthorized;
 				_response.IsSuccess = false;
-				_response.ErrorMessages = new List<string> { "You do not have permission to view books for this business." };
-				return Forbid();
+				_response.ErrorMessages = new List<string> { "Invalid token." };
+				return Unauthorized(_response);
 			}
 			if (id == Guid.Empty)
 			{
 				return BadRequest("Invalid book ID.");
 			}
-			if (await _bookRepository.GetAsync((Book u) => u.Id == id) == null)
+			Book existingBook = await _bookRepository.GetAsync((Book u) => u.Id == id);
+			if (existingBook == null)
 			{
 				return NotFound("Book not found.");
+			}
+			// الفحص واقع على منشأة الخزنة نفسها، لا على منشأة يرسلها المستدعي في الطلب.
+			string userRole = await _bookRepository.GetUserRoleAsync(callerId.Value, existingBook.BusinessId);
+			if (userRole == null || !Enumerable.Contains(Roles.Management, userRole.ToLower()))
+			{
+				_response.StatusCode = HttpStatusCode.Forbidden;
+				_response.IsSuccess = false;
+				_response.ErrorMessages = new List<string> { "لا تملك صلاحية حذف هذه الخزنة." };
+				return Forbid();
 			}
 			await _bookRepository.DeleteBookAsync(id);
 			_response.StatusCode = HttpStatusCode.NoContent;
@@ -239,23 +246,45 @@ public class BookController : ControllerBase
 	{
 		try
 		{
-			string[] allowedRoles = Roles.Management;
-			string userIdStr = base.User.FindFirst("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier")?.Value;
-			Guid userId = Guid.Parse(userIdStr);
-			string userRole = await _bookRepository.GetUserRoleAsync(userId, updateBookDto.BusinessId);
-			if (userRole == null || !Enumerable.Contains(allowedRoles, userRole.ToLower()))
+			Guid? callerId = base.User.GetUserId();
+			if (!callerId.HasValue)
 			{
-				_response.StatusCode = HttpStatusCode.Forbidden;
+				_response.StatusCode = HttpStatusCode.Unauthorized;
 				_response.IsSuccess = false;
-				_response.ErrorMessages = new List<string> { "You do not have permission to view books for this business." };
-				return Forbid();
+				_response.ErrorMessages = new List<string> { "Invalid token." };
+				return Unauthorized(_response);
 			}
-			Book existingBook = await _bookRepository.GetAsync((Book u) => u.Id == id);
-			_mapper.Map(updateBookDto, existingBook);
-			if (updateBookDto == null || existingBook == null)
+			if (updateBookDto == null)
 			{
 				return BadRequest();
 			}
+			Book existingBook = await _bookRepository.GetAsync((Book u) => u.Id == id);
+			if (existingBook == null)
+			{
+				return NotFound("Book not found.");
+			}
+			// الفحص واقع على منشأة الخزنة نفسها، لا على منشأة يرسلها المستدعي في جسم الطلب.
+			string userRole = await _bookRepository.GetUserRoleAsync(callerId.Value, existingBook.BusinessId);
+			if (userRole == null || !Enumerable.Contains(Roles.Management, userRole.ToLower()))
+			{
+				_response.StatusCode = HttpStatusCode.Forbidden;
+				_response.IsSuccess = false;
+				_response.ErrorMessages = new List<string> { "لا تملك صلاحية تعديل هذه الخزنة." };
+				return Forbid();
+			}
+			// إرسال منشأة أخرى يعني نقل الخزنة إليها، فيُشترط أن يملك المستدعي صلاحية عليها أيضاً.
+			if (updateBookDto.BusinessId != Guid.Empty && updateBookDto.BusinessId != existingBook.BusinessId)
+			{
+				string targetRole = await _bookRepository.GetUserRoleAsync(callerId.Value, updateBookDto.BusinessId);
+				if (targetRole == null || !Enumerable.Contains(Roles.Management, targetRole.ToLower()))
+				{
+					_response.StatusCode = HttpStatusCode.Forbidden;
+					_response.IsSuccess = false;
+					_response.ErrorMessages = new List<string> { "لا تملك صلاحية نقل الخزنة إلى المنشأة المطلوبة." };
+					return Forbid();
+				}
+			}
+			_mapper.Map(updateBookDto, existingBook);
 			await _bookRepository.UpdateAsync(existingBook);
 			_response.Result = existingBook;
 			_response.StatusCode = HttpStatusCode.NoContent;
