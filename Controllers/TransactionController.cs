@@ -77,8 +77,8 @@ public class TransactionController : ControllerBase
 		if (Roles.IsBookScoped(role))
 		{
 			List<Guid> allowedBooks = await (from bu in _context.BusinessUsers
-				where bu.UserId == userId && bu.BusinessId == wallet.BusinessId
-				select bu.BookIds).FirstOrDefaultAsync();
+											 where bu.UserId == userId && bu.BusinessId == wallet.BusinessId
+											 select bu.BookIds).FirstOrDefaultAsync();
 			if (allowedBooks == null || !allowedBooks.Contains(walletId))
 			{
 				return WalletAccess.Forbidden;
@@ -221,8 +221,8 @@ public class TransactionController : ControllerBase
 				return StatusCode(403, _response);
 			}
 			if (Roles.IsBookScoped(role) && !((await (from bu in _context.BusinessUsers
-				where bu.UserId == ((Guid?)callerId).Value && bu.BusinessId == book.BusinessId
-				select bu.BookIds).FirstOrDefaultAsync())?.Contains(transaction.BookId) ?? false))
+													  where bu.UserId == ((Guid?)callerId).Value && bu.BusinessId == book.BusinessId
+													  select bu.BookIds).FirstOrDefaultAsync())?.Contains(transaction.BookId) ?? false))
 			{
 				_response.StatusCode = HttpStatusCode.Forbidden;
 				_response.IsSuccess = false;

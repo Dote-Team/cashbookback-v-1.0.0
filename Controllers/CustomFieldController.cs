@@ -68,8 +68,8 @@ public class CustomFieldController : ControllerBase
 			return FieldAccess.WalletNotFound;
 		}
 		string role = await (from bu in _context.BusinessUsers
-			where bu.UserId == userId && bu.BusinessId == wallet.BusinessId
-			select bu.Role.ToLower()).FirstOrDefaultAsync();
+							 where bu.UserId == userId && bu.BusinessId == wallet.BusinessId
+							 select bu.Role.ToLower()).FirstOrDefaultAsync();
 		if (role == null || !Enumerable.Contains(allowedRoles, role))
 		{
 			return FieldAccess.Forbidden;
@@ -77,8 +77,8 @@ public class CustomFieldController : ControllerBase
 		if (Roles.IsBookScoped(role))
 		{
 			List<Guid> allowedBooks = await (from bu in _context.BusinessUsers
-				where bu.UserId == userId && bu.BusinessId == wallet.BusinessId
-				select bu.BookIds).FirstOrDefaultAsync();
+											 where bu.UserId == userId && bu.BusinessId == wallet.BusinessId
+											 select bu.BookIds).FirstOrDefaultAsync();
 			if (allowedBooks == null || !allowedBooks.Contains(walletId))
 			{
 				return FieldAccess.Forbidden;
