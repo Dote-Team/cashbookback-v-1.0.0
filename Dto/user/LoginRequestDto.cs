@@ -13,5 +13,5 @@ public class LoginRequestDto
 	[DefaultValue("admin")]
 	public string Password { get; set; }
 
-	public string DeviceToken { get; set; }
+	public string? DeviceToken { get; set; }
 }
