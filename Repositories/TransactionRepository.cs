@@ -86,7 +86,7 @@ public class TransactionRepository : Repository<Transaction>, ITransactionReposi
             {
                 _context.CustomFieldValues.Add(new CustomFieldValue
                 {
-                    Value = cfvDto.Value,
+                    Value = cfvDto.Value ?? string.Empty,
                     CustomFieldId = cfvDto.CustomFieldId,
                     TransactionId = transaction.Id
                 });
@@ -127,7 +127,7 @@ public class TransactionRepository : Repository<Transaction>, ITransactionReposi
     /// </summary>
     public async Task<bool> ArchiveTransactionAsync(Guid transactionId, Guid archivedByUserId, string? reason = null)
     {
-        Transaction transaction = await _context.Transactions.FirstOrDefaultAsync((Transaction t) => t.Id == transactionId);
+        Transaction? transaction = await _context.Transactions.FirstOrDefaultAsync((Transaction t) => t.Id == transactionId);
         if (transaction == null)
         {
             return false;
@@ -309,7 +309,7 @@ public class TransactionRepository : Repository<Transaction>, ITransactionReposi
                             IsRequired = cf.CustomField.IsRequired
                         })
                     }).ToList(),
-                    Attachments = t.Attachements?.Select((Attachement a) => new AttachmentDto
+                    Attachments = t.Attachements.Select((Attachement a) => new AttachmentDto
                     {
                         Id = a.Id,
                         Files = _files.SignedName(a.Files),
@@ -361,7 +361,7 @@ public class TransactionRepository : Repository<Transaction>, ITransactionReposi
             {
                 command.CommandText = sql;
                 BindParameters(command, parameters);
-                object result = await command.ExecuteScalarAsync();
+                object? result = await command.ExecuteScalarAsync();
                 num = ((result != null && result != DBNull.Value) ? Convert.ToInt32(result) : 0);
             }
             result2 = num;
@@ -447,7 +447,7 @@ public class TransactionRepository : Repository<Transaction>, ITransactionReposi
     {
         try
         {
-            Transaction transaction = await _context.Transactions.Include((Transaction t) => t.CustomFieldValues).Include((Transaction t) => t.Attachements).FirstOrDefaultAsync((Transaction t) => t.Id == Id);
+            Transaction? transaction = await _context.Transactions.Include((Transaction t) => t.CustomFieldValues).Include((Transaction t) => t.Attachements).FirstOrDefaultAsync((Transaction t) => t.Id == Id);
             if (transaction == null)
             {
                 return false;
@@ -482,7 +482,7 @@ public class TransactionRepository : Repository<Transaction>, ITransactionReposi
             {
                 IEnumerable<CustomFieldValue> newCustomFieldValues = customFieldValues.Select((CustomFieldValueCreateDto cfvDto) => new CustomFieldValue
                 {
-                    Value = cfvDto.Value,
+                    Value = cfvDto.Value ?? string.Empty,
                     CustomFieldId = cfvDto.CustomFieldId,
                     TransactionId = transaction.Id
                 });
@@ -546,7 +546,7 @@ public class TransactionRepository : Repository<Transaction>, ITransactionReposi
 
     public async Task<Guid> DuplicateTransactionToAnotherBookAsync(Guid transactionId, Guid targetBookId, Guid userId)
     {
-        Transaction transaction = await _context.Transactions.Include((Transaction t) => t.CustomFieldValues).Include((Transaction t) => t.Attachements).FirstOrDefaultAsync((Transaction t) => t.Id == transactionId);
+        Transaction? transaction = await _context.Transactions.Include((Transaction t) => t.CustomFieldValues).Include((Transaction t) => t.Attachements).FirstOrDefaultAsync((Transaction t) => t.Id == transactionId);
         if (transaction == null)
         {
             throw new InvalidOperationException("Transaction not found");

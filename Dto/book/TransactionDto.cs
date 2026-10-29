@@ -12,7 +12,7 @@ public class TransactionDto
 {
 	public Guid Id { get; set; }
 
-	public string Type { get; set; }
+	public string Type { get; set; } = string.Empty;
 
 	public DateTime Date { get; set; }
 
@@ -54,5 +54,5 @@ public class TransactionDto
 
 	public List<CustomFieldValueDto>? CustomFieldValues { get; set; }
 
-	public List<AttachmentDto> Attachments { get; set; }
+	public List<AttachmentDto> Attachments { get; set; } = new List<AttachmentDto>();
 }

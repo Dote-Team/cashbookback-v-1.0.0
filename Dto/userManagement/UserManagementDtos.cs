@@ -15,16 +15,16 @@ public class BookGrantDto
 public class CreateManagedUserDto
 {
 	/// <summary>اسم الدخول (فريد).</summary>
-	public string Username { get; set; }
+	public string Username { get; set; } = string.Empty;
 
 	/// <summary>الاسم الظاهر.</summary>
-	public string Name { get; set; }
+	public string Name { get; set; } = string.Empty;
 
 	/// <summary>البريد (اختياري).</summary>
 	public string? Email { get; set; }
 
 	/// <summary>كلمة المرور: 8 أحرف على الأقل، فيها حرف ورقم.</summary>
-	public string Password { get; set; }
+	public string Password { get; set; } = string.Empty;
 
 	/// <summary>الخزائن وصلاحيات كل منها.</summary>
 	public List<BookGrantDto> Grants { get; set; } = new List<BookGrantDto>();
@@ -48,7 +48,7 @@ public class UpdateManagedUserDto
 public class ResetPasswordDto
 {
 	/// <summary>كلمة المرور: 8 أحرف على الأقل، فيها حرف ورقم.</summary>
-	public string Password { get; set; }
+	public string Password { get; set; } = string.Empty;
 }
 
 public class BookGrantViewDto
@@ -56,11 +56,11 @@ public class BookGrantViewDto
 	/// <summary>معرّف الخزنة.</summary>
 	public Guid BookId { get; set; }
 
-	public string BookName { get; set; }
+	public string BookName { get; set; } = string.Empty;
 
 	public Guid BusinessId { get; set; }
 
-	public string BusinessName { get; set; }
+	public string BusinessName { get; set; } = string.Empty;
 
 	/// <summary>رموز الصلاحيات على هذه الخزنة، مثل book.view و transaction.create (القائمة الكاملة من /API/Permission/catalog).</summary>
 	public List<string> Permissions { get; set; } = new List<string>();
@@ -71,17 +71,17 @@ public class ManagedUserDto
 	public Guid Id { get; set; }
 
 	/// <summary>اسم الدخول (فريد).</summary>
-	public string Username { get; set; }
+	public string Username { get; set; } = string.Empty;
 
 	/// <summary>الاسم الظاهر.</summary>
-	public string Name { get; set; }
+	public string Name { get; set; } = string.Empty;
 
 	/// <summary>البريد (اختياري).</summary>
-	public string Email { get; set; }
+	public string Email { get; set; } = string.Empty;
 
 	public int Level { get; set; }
 
-	public string LevelName { get; set; }
+	public string LevelName { get; set; } = string.Empty;
 
 	public bool IsActive { get; set; }
 
@@ -99,12 +99,12 @@ public class ManagedUserDto
 
 public class PermissionDefinitionDto
 {
-	public string Code { get; set; }
+	public string Code { get; set; } = string.Empty;
 
 	/// <summary>الاسم الظاهر.</summary>
-	public string Name { get; set; }
+	public string Name { get; set; } = string.Empty;
 
-	public string Group { get; set; }
+	public string Group { get; set; } = string.Empty;
 
 	public bool SuperAdminGrantOnly { get; set; }
 }
@@ -115,7 +115,7 @@ public class MyPermissionsDto
 
 	public int Level { get; set; }
 
-	public string LevelName { get; set; }
+	public string LevelName { get; set; } = string.Empty;
 
 	public bool IsSuperAdmin { get; set; }
 

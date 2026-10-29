@@ -150,7 +150,7 @@ public class BackupController : ControllerBase
 			{
 				return Fail(HttpStatusCode.Unauthorized, "Invalid user ID.");
 			}
-			IFormFile file = request?.File;
+			IFormFile? file = request?.File;
 			if (file == null || file.Length == 0)
 			{
 				return Fail(HttpStatusCode.BadRequest, "لم يتم إرسال ملف النسخة الاحتياطية.");
@@ -201,7 +201,7 @@ public class BackupController : ControllerBase
 			{
 				return Fail(HttpStatusCode.Unauthorized, "Invalid user ID.");
 			}
-			IFormFile file = request?.File;
+			IFormFile? file = request?.File;
 			Guid businessId = request?.BusinessId ?? Guid.Empty;
 			if (businessId == Guid.Empty)
 			{

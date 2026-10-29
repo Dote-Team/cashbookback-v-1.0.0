@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 
 namespace cashbook.Helper;
@@ -62,7 +63,7 @@ public static class Permissions
 
 	public static readonly IReadOnlySet<string> All = Catalog.Select(d => d.Code).ToHashSet();
 
-	public static bool IsKnown(string? code) => code != null && All.Contains(code);
+	public static bool IsKnown([NotNullWhen(true)] string? code) => code != null && All.Contains(code);
 
 	public static bool IsSuperAdminGrantOnly(string code) =>
 		Catalog.Any(d => d.Code == code && d.SuperAdminGrantOnly);

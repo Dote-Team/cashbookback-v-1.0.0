@@ -83,7 +83,7 @@ public class BackupService : IBackupService
 			where cf.BookId == bookId
 			orderby cf.Key
 			select cf).ToListAsync();
-		string exportedBy = await (from u in _context.Users
+		string? exportedBy = await (from u in _context.Users
 			where u.Id == userId
 			select u.Username ?? u.Email).FirstOrDefaultAsync();
 		BackupManifestDto manifest = new BackupManifestDto
@@ -104,17 +104,17 @@ public class BackupService : IBackupService
 				select c).ToList(),
 			Categories = (from n in (from t in transactions
 					where t.Category != null
-					select t.Category.Name).Distinct()
+					select t.Category!.Name).Distinct()
 				orderby n
 				select n).ToList(),
 			PaymentMethods = (from n in (from t in transactions
 					where t.PaymentMethod != null
-					select t.PaymentMethod.Name).Distinct()
+					select t.PaymentMethod!.Name).Distinct()
 				orderby n
 				select n).ToList(),
 			Contacts = (from n in (from t in transactions
 					where t.Contact != null
-					select t.Contact.Name).Distinct()
+					select t.Contact!.Name).Distinct()
 				orderby n
 				select n).ToList(),
 			CustomFields = customFields.Select((CustomField cf) => new BackupCustomFieldDto
@@ -339,7 +339,7 @@ public class BackupService : IBackupService
 				foreach (string attachmentName in dto.Attachments ?? new List<string>())
 				{
 					// اسم المرفق من داخل النسخة لا يُوثق به: امتداد مسموح فقط، فلا يصل ملف HTML أو SVG إلى مجلد الرفع.
-					ZipArchiveEntry entry = _files.IsAllowedExtension(attachmentName) ? archive.GetEntry("attachments/" + attachmentName) : null;
+					ZipArchiveEntry? entry = _files.IsAllowedExtension(attachmentName) ? archive.GetEntry("attachments/" + attachmentName) : null;
 					if (entry == null)
 					{
 						continue;
@@ -401,7 +401,7 @@ public class BackupService : IBackupService
 		{
 			Console.WriteLine($"    {entry.FullName,-45} {entry.Length,10} بايت");
 		}
-		BackupManifestDto manifest = ReadJsonEntry<BackupManifestDto>(archive, "manifest.json");
+		BackupManifestDto? manifest = ReadJsonEntry<BackupManifestDto>(archive, "manifest.json");
 		List<BackupTransactionDto> transactions = ReadJsonEntry<List<BackupTransactionDto>>(archive, "transactions.json") ?? new List<BackupTransactionDto>();
 		string target = outputDirectory ?? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(filePath)) ?? ".", Path.GetFileNameWithoutExtension(filePath) + "-decrypted");
 		Directory.CreateDirectory(target);
@@ -413,7 +413,7 @@ public class BackupService : IBackupService
 		foreach (ZipArchiveEntry entry2 in archive.Entries.Where((ZipArchiveEntry e) => e.FullName.StartsWith("attachments/", StringComparison.Ordinal)))
 		{
 			string destination = Path.Combine(target, entry2.FullName.Replace('/', Path.DirectorySeparatorChar));
-			Directory.CreateDirectory(Path.GetDirectoryName(destination));
+			Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
 			using Stream entryStream = entry2.Open();
 			using FileStream destinationStream = File.Create(destination);
 			await entryStream.CopyToAsync(destinationStream);
@@ -469,7 +469,7 @@ public class BackupService : IBackupService
 
 	private static T? ReadJsonEntry<T>(ZipArchive archive, string entryName)
 	{
-		ZipArchiveEntry entry = archive.GetEntry(entryName);
+		ZipArchiveEntry? entry = archive.GetEntry(entryName);
 		if (entry == null)
 		{
 			return default(T);

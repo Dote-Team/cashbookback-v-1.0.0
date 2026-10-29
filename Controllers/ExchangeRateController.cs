@@ -139,7 +139,7 @@ public class ExchangeRateController : ApiControllerBase
 		{
 			return Fail(HttpStatusCode.Forbidden, "لا تملك صلاحية تحديد سعر الصرف لهذه الخزنة.");
 		}
-		if (!MoneyMath.TryValidateRate(dto.Rate, out string rateError))
+		if (!MoneyMath.TryValidateRate(dto.Rate, out string? rateError))
 		{
 			return Fail(HttpStatusCode.BadRequest, rateError);
 		}

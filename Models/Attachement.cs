@@ -12,13 +12,13 @@ public class Attachement : IArchivable
 	public Guid Id { get; set; }
 
 	[Required]
-	public string Files { get; set; }
+	public string Files { get; set; } = string.Empty;
 
 	[Required]
 	[ForeignKey("Transaction")]
 	public Guid TransactionId { get; set; }
 
-	public Transaction Transaction { get; set; }
+	public Transaction Transaction { get; set; } = null!;
 
 	[Required]
 	public DateTime CreatedAt { get; set; } = DateTime.Now;

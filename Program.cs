@@ -76,7 +76,7 @@ internal class Program
         WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
         builder.Configuration.AddDotEnvFile();
         builder.Configuration.AddUserSecrets<Program>(optional: true);
-        string key = builder.Configuration.GetValue<string>("ApiSettings:Secret");
+        string? key = builder.Configuration.GetValue<string>("ApiSettings:Secret");
         if (string.IsNullOrWhiteSpace(key) || key.Length < 32)
         {
             throw new InvalidOperationException("مفتاح توقيع الرموز (ApiSettings:Secret) غير مضبوط أو أقصر من 32 حرفا\u064b.\nللتطوير : dotnet user-secrets set \"ApiSettings:Secret\" \"<قيمة عشوائية 32 حرفا\u064b على الأقل>\"\nعلى الخادم: أضف السطر  ApiSettings__Secret=<قيمة عشوائية 32 حرفا\u064b على الأقل>  إلى ملف .env\n            (ول\u0651د قيمة جديدة خاصة بالخادم، لا تستخدم مفتاح جهاز التطوير)");
@@ -164,11 +164,11 @@ internal class Program
             foreach (string network in builder.Configuration.GetSection("ReverseProxy:KnownNetworks").Get<string[]>() ?? Array.Empty<string>())
             {
                 string[] parts = network.Split('/');
-                if (parts.Length == 2 && System.Net.IPAddress.TryParse(parts[0], out System.Net.IPAddress prefix) && int.TryParse(parts[1], out int length))
+                if (parts.Length == 2 && System.Net.IPAddress.TryParse(parts[0], out System.Net.IPAddress? prefix) && int.TryParse(parts[1], out int length))
                 {
                     options.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(prefix, length));
                 }
-                else if (System.Net.IPAddress.TryParse(network, out System.Net.IPAddress proxy))
+                else if (System.Net.IPAddress.TryParse(network, out System.Net.IPAddress? proxy))
                 {
                     options.KnownProxies.Add(proxy);
                 }
@@ -279,7 +279,7 @@ internal class Program
         {
             errorApp.Run(async delegate (HttpContext context)
             {
-                Exception error = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>()?.Error;
+                Exception? error = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>()?.Error;
                 context.RequestServices.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>()
                     .CreateLogger("UnhandledException")
                     .LogError(error, "خطأ غير معالج في {Path}", context.Request.Path);
@@ -290,7 +290,7 @@ internal class Program
                     : rejectedFile ? StatusCodes.Status400BadRequest
                     : tooLarge ? StatusCodes.Status413PayloadTooLarge
                     : StatusCodes.Status500InternalServerError;
-                string message = blockedDelete || rejectedFile ? error.Message
+                string message = blockedDelete || rejectedFile ? error!.Message
                     : tooLarge ? "حجم الطلب أكبر من المسموح."
                     : ApiErrorSanitizerFilter.GenericMessage;
                 context.Response.ContentType = "application/json; charset=utf-8";
@@ -315,9 +315,13 @@ internal class Program
         app.UseCors("AllowConfiguredOrigins");
         // المرفقات إيصالات مالية: لا تُعرض إلا بتوقيع مؤقت يصدره الخادم مع بيانات القيد
         // (exp و sig في الرابط)، أو برمز دخول لمستخدم يملك عرض قيود خزنتها.
-        app.MapGet("/API/Files/{imageName}", async delegate (string imageName, long? exp, string? sig, HttpContext http, IFileStorage files, ApplicationDbContext db, IPermissionService permissions)
+        app.MapGet("/API/Files/{imageName}", async (
+            [Swashbuckle.AspNetCore.Annotations.SwaggerParameter("اسم الملف كما في حقل files بالقيد، أو profileImage للمستخدم.")] string imageName,
+            [Swashbuckle.AspNetCore.Annotations.SwaggerParameter("انتهاء صلاحية الرابط (Unix بالثواني). يأتي جاهزاً مع الرابط الموقّع.")] long? exp,
+            [Swashbuckle.AspNetCore.Annotations.SwaggerParameter("توقيع الرابط. بدونه يلزم رمز دخول وصلاحية transaction.view.")] string? sig,
+            HttpContext http, IFileStorage files, ApplicationDbContext db, IPermissionService permissions) =>
         {
-            string path = files.Resolve(imageName);
+            string? path = files.Resolve(imageName);
             if (path == null)
             {
                 return Results.NotFound("Image not found.");
@@ -404,15 +408,15 @@ internal class Program
             {
                 await dbContext.Database.MigrateAsync();
             }
-            string adminUsername = app.Configuration.GetValue<string>("AdminUser:Username");
-            string adminEmail = app.Configuration.GetValue<string>("AdminUser:Email");
+            string? adminUsername = app.Configuration.GetValue<string>("AdminUser:Username");
+            string? adminEmail = app.Configuration.GetValue<string>("AdminUser:Email");
             bool hasUsername = !string.IsNullOrWhiteSpace(adminUsername);
             bool hasEmail = !string.IsNullOrWhiteSpace(adminEmail);
             if (hasUsername | hasEmail)
             {
-                string usernameLower = adminUsername?.Trim().ToLowerInvariant();
-                string emailLower = adminEmail?.Trim().ToLowerInvariant();
-                User admin = null;
+                string? usernameLower = adminUsername?.Trim().ToLowerInvariant();
+                string? emailLower = adminEmail?.Trim().ToLowerInvariant();
+                User? admin = null;
                 if (hasUsername)
                 {
                     admin = await dbContext.Users.FirstOrDefaultAsync((User u) => u.Username.ToLower() == usernameLower);
@@ -423,7 +427,7 @@ internal class Program
                 }
                 // السوبر أدمن الرئيسي موجود دائماً في قاعدة البيانات: يُرقّى الحساب المحدد إن وُجد،
                 // ويُنشأ بكلمة المرور من .env (AdminUser__Password) إن لم يوجد بعد.
-                string adminPassword = app.Configuration.GetValue<string>("AdminUser:Password");
+                string? adminPassword = app.Configuration.GetValue<string>("AdminUser:Password");
                 if (admin == null && hasUsername && !string.IsNullOrWhiteSpace(adminPassword))
                 {
                     if (!PasswordPolicy.IsValid(adminPassword, out string passwordError))
@@ -432,9 +436,9 @@ internal class Program
                     }
                     admin = new User
                     {
-                        Username = adminUsername.Trim(),
-                        Name = adminUsername.Trim(),
-                        Email = hasEmail ? adminEmail.Trim() : adminUsername.Trim().ToLowerInvariant() + "@local.invalid",
+                        Username = adminUsername!.Trim(),
+                        Name = adminUsername!.Trim(),
+                        Email = hasEmail ? adminEmail!.Trim() : adminUsername!.Trim().ToLowerInvariant() + "@local.invalid",
                         Password = BCrypt.Net.BCrypt.HashPassword(adminPassword),
                         CreatedAt = DateTime.UtcNow,
                         UpdatedAt = DateTime.UtcNow

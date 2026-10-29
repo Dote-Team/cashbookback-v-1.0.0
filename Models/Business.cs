@@ -13,7 +13,7 @@ public class Business : IArchivable
 	public Guid Id { get; set; }
 
 	[Required]
-	public string Name { get; set; }
+	public string Name { get; set; } = string.Empty;
 
 	[Required]
 	public DateTime CreatedAt { get; set; } = DateTime.Now;
@@ -21,15 +21,15 @@ public class Business : IArchivable
 	[Required]
 	public DateTime UpdatedAt { get; set; } = DateTime.Now;
 
-	public ICollection<Category> Categories { get; set; }
+	public ICollection<Category> Categories { get; set; } = new List<Category>();
 
-	public ICollection<PaymentMethod> PaymentMethods { get; set; }
+	public ICollection<PaymentMethod> PaymentMethods { get; set; } = new List<PaymentMethod>();
 
-	public ICollection<Contact> Contacts { get; set; }
+	public ICollection<Contact> Contacts { get; set; } = new List<Contact>();
 
-	public ICollection<Book> Books { get; set; }
+	public ICollection<Book> Books { get; set; } = new List<Book>();
 
-	public ICollection<BusinessUser> BusinessUsers { get; set; }
+	public ICollection<BusinessUser> BusinessUsers { get; set; } = new List<BusinessUser>();
 
 	public bool IsArchived { get; set; }
 

@@ -16,7 +16,7 @@ public class ExchangeRate
 	[ForeignKey("Book")]
 	public Guid BookId { get; set; }
 
-	public Book Book { get; set; }
+	public Book Book { get; set; } = null!;
 
 	public CurrencyCode Currency { get; set; } = CurrencyCode.USD;
 

@@ -93,7 +93,7 @@ public sealed class UserManagementService : IUserManagementService
 		{
 			return ServiceResult.Fail(HttpStatusCode.Forbidden, "لا تملك صلاحية إنشاء مستخدمين.");
 		}
-		string username = dto.Username?.Trim();
+		string? username = dto.Username?.Trim();
 		if (string.IsNullOrWhiteSpace(username))
 		{
 			return ServiceResult.Fail(HttpStatusCode.BadRequest, "اسم المستخدم مطلوب.");
@@ -418,7 +418,7 @@ public sealed class UserManagementService : IUserManagementService
 			HashSet<string> codes = new HashSet<string>();
 			foreach (string raw in grant.Permissions ?? new List<string>())
 			{
-				string code = raw?.Trim().ToLowerInvariant();
+				string? code = raw?.Trim().ToLowerInvariant();
 				if (!Permissions.IsKnown(code))
 				{
 					return (null, "صلاحية غير معروفة: " + raw);

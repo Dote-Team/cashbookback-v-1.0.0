@@ -14,7 +14,7 @@ public class Transaction : IArchivable
 	public Guid Id { get; set; }
 
 	[Required]
-	public string Type { get; set; }
+	public string Type { get; set; } = string.Empty;
 
 	public DateTime Date { get; set; }
 
@@ -31,29 +31,29 @@ public class Transaction : IArchivable
 	[ForeignKey("Category")]
 	public Guid? CategoryId { get; set; }
 
-	public Category Category { get; set; }
+	public Category? Category { get; set; }
 
 	[ForeignKey("PaymentMethod")]
 	public Guid? PaymentMethodId { get; set; }
 
-	public PaymentMethod PaymentMethod { get; set; }
+	public PaymentMethod? PaymentMethod { get; set; }
 
 	[Required]
 	[ForeignKey("Book")]
 	public Guid BookId { get; set; }
 
-	public Book Book { get; set; }
+	public Book Book { get; set; } = null!;
 
 	[Required]
 	[ForeignKey("User")]
 	public Guid UserId { get; set; }
 
-	public User User { get; set; }
+	public User User { get; set; } = null!;
 
 	[ForeignKey("Contact")]
 	public Guid? ContactId { get; set; }
 
-	public Contact Contact { get; set; }
+	public Contact? Contact { get; set; }
 
 	[Required]
 	public DateTime CreatedAt { get; set; } = DateTime.Now;
@@ -61,11 +61,11 @@ public class Transaction : IArchivable
 	[Required]
 	public DateTime UpdatedAt { get; set; } = DateTime.Now;
 
-	public ICollection<CustomFieldValue> CustomFieldValues { get; set; }
+	public ICollection<CustomFieldValue> CustomFieldValues { get; set; } = new List<CustomFieldValue>();
 
-	public ICollection<Attachement> Attachements { get; set; }
+	public ICollection<Attachement> Attachements { get; set; } = new List<Attachement>();
 
-	public ICollection<TransactionHistory> TransactionHistories { get; set; }
+	public ICollection<TransactionHistory> TransactionHistories { get; set; } = new List<TransactionHistory>();
 
 	public bool IsArchived { get; set; }
 

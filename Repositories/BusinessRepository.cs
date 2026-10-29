@@ -71,7 +71,7 @@ public class BusinessRepository : Repository<Business>, IBusinessRepository, IRe
 
 	public async Task<BusinessWithBooksDto?> GetBusinessWithBooksDtoByIdAsync(Guid id, List<Guid>? accessibleBookIds)
 	{
-		Business business = await _context.Businesses.AsNoTracking().FirstOrDefaultAsync(b => b.Id == id);
+		Business? business = await _context.Businesses.AsNoTracking().FirstOrDefaultAsync(b => b.Id == id);
 		if (business == null)
 		{
 			return null;
@@ -99,7 +99,7 @@ public class BusinessRepository : Repository<Business>, IBusinessRepository, IRe
 	/// <summary>أرشفة المنشأة دون رجعة، ومعها خزائنها كلها في العملية نفسها.</summary>
 	public async Task<bool> ArchiveBusinessAsync(Guid businessId, Guid archivedByUserId, string? reason = null)
 	{
-		Business business = await _context.Businesses.FirstOrDefaultAsync(b => b.Id == businessId);
+		Business? business = await _context.Businesses.FirstOrDefaultAsync(b => b.Id == businessId);
 		if (business == null)
 		{
 			return false;

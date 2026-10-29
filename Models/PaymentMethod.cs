@@ -12,13 +12,13 @@ public class PaymentMethod : IArchivable, IBusinessScoped
 	[DatabaseGenerated(DatabaseGeneratedOption.Identity)]
 	public Guid Id { get; set; }
 
-	public string Name { get; set; }
+	public string Name { get; set; } = string.Empty;
 
 	[Required]
 	[ForeignKey("Business")]
 	public Guid BusinessId { get; set; }
 
-	public Business Business { get; set; }
+	public Business Business { get; set; } = null!;
 
 	[Required]
 	public DateTime CreatedAt { get; set; } = DateTime.Now;
@@ -26,7 +26,7 @@ public class PaymentMethod : IArchivable, IBusinessScoped
 	[Required]
 	public DateTime UpdatedAt { get; set; } = DateTime.Now;
 
-	public ICollection<Transaction> Transactions { get; set; }
+	public ICollection<Transaction> Transactions { get; set; } = new List<Transaction>();
 
 	public bool IsArchived { get; set; }
 

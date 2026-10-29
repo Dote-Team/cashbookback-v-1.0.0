@@ -12,13 +12,13 @@ public class User
 	[DatabaseGenerated(DatabaseGeneratedOption.Identity)]
 	public Guid Id { get; set; }
 
-	public string Name { get; set; }
+	public string Name { get; set; } = string.Empty;
 
 	[Required(ErrorMessage = "Username is required")]
-	public string Username { get; set; }
+	public string Username { get; set; } = string.Empty;
 
 	[Required(ErrorMessage = "Email is required")]
-	public string Email { get; set; }
+	public string Email { get; set; } = string.Empty;
 
 	[Required(ErrorMessage = "Password is required")]
 	public string Password { get; set; } = "";
@@ -49,13 +49,13 @@ public class User
 
 	public Guid? DeactivatedByUserId { get; set; }
 
-	public ICollection<UserWalletPermission> WalletPermissions { get; set; }
+	public ICollection<UserWalletPermission> WalletPermissions { get; set; } = new List<UserWalletPermission>();
 
-	public ICollection<Session> Sessions { get; set; }
+	public ICollection<Session> Sessions { get; set; } = new List<Session>();
 
-	public ICollection<BusinessUser> BusinessUsers { get; set; }
+	public ICollection<BusinessUser> BusinessUsers { get; set; } = new List<BusinessUser>();
 
-	public ICollection<Transaction> Transactions { get; set; }
+	public ICollection<Transaction> Transactions { get; set; } = new List<Transaction>();
 
-	public ICollection<TransactionHistory> TransactionHistories { get; set; }
+	public ICollection<TransactionHistory> TransactionHistories { get; set; } = new List<TransactionHistory>();
 }

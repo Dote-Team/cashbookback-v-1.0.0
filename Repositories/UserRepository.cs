@@ -61,7 +61,7 @@ public class UserRepository : Repository<User>, IUserRepository, IRepository<Use
 
 	public async Task<bool> UpdateUserAsync(Guid id, UserUpdateDto userUpdateDto)
 	{
-		User existingUser = await _context.Users.FindAsync(id);
+		User? existingUser = await _context.Users.FindAsync(id);
 		if (existingUser == null)
 		{
 			return false;
@@ -102,12 +102,12 @@ public class UserRepository : Repository<User>, IUserRepository, IRepository<Use
 
 	public async Task<LoginResponseDto?> Login(LoginRequestDto loginRequestDto)
 	{
-		string identifier = !string.IsNullOrWhiteSpace(loginRequestDto.Username) ? loginRequestDto.Username.Trim() : loginRequestDto.Email?.Trim();
+		string? identifier = !string.IsNullOrWhiteSpace(loginRequestDto.Username) ? loginRequestDto.Username.Trim() : loginRequestDto.Email?.Trim();
 		if (string.IsNullOrWhiteSpace(identifier))
 		{
 			return null;
 		}
-		User user = await _context.Users.FirstOrDefaultAsync(u => u.Username == identifier || u.Email == identifier);
+		User? user = await _context.Users.FirstOrDefaultAsync(u => u.Username == identifier || u.Email == identifier);
 		if (user == null || !user.IsActive || !BCrypt.Net.BCrypt.Verify(loginRequestDto.Password ?? "", user.Password))
 		{
 			return null;
@@ -171,7 +171,7 @@ public class UserRepository : Repository<User>, IUserRepository, IRepository<Use
 		{
 			return false;
 		}
-		Session session = await _context.Sessions.FirstOrDefaultAsync(s => s.Id == sessionId && s.UserId == userId);
+		Session? session = await _context.Sessions.FirstOrDefaultAsync(s => s.Id == sessionId && s.UserId == userId);
 		if (session == null)
 		{
 			return false;

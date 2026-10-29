@@ -14,7 +14,7 @@ public class LoginRequestDto
 
 	/// <summary>كلمة المرور.</summary>
 	[DefaultValue("admin")]
-	public string Password { get; set; }
+	public string Password { get; set; } = string.Empty;
 
 	/// <summary>اختياري: معرّف الجهاز، يظهر في سجل التدقيق.</summary>
 	public string? DeviceToken { get; set; }

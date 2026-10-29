@@ -8,9 +8,9 @@ public class BusinessWithBooksDto
 {
 	public Guid Id { get; set; }
 
-	public string Name { get; set; }
+	public string Name { get; set; } = string.Empty;
 
-	public List<BookDto> Books { get; set; }
+	public List<BookDto> Books { get; set; } = new List<BookDto>();
 
 	public DateTime CreatedAt { get; set; }
 

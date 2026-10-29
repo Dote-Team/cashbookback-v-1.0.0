@@ -9,7 +9,7 @@ public static class DotEnv
 {
 	public static IConfigurationBuilder AddDotEnvFile(this IConfigurationBuilder builder, string? path = null)
 	{
-		string text = Resolve(path);
+		string? text = Resolve(path);
 		if (text != null)
 		{
 			builder.Add(new DotEnvConfigurationSource(text));
@@ -23,7 +23,7 @@ public static class DotEnv
 		{
 			return File.Exists(explicitPath) ? explicitPath : null;
 		}
-		string environmentVariable = Environment.GetEnvironmentVariable("DOTENV_PATH");
+		string? environmentVariable = Environment.GetEnvironmentVariable("DOTENV_PATH");
 		if (!string.IsNullOrWhiteSpace(environmentVariable) && File.Exists(environmentVariable))
 		{
 			return environmentVariable;

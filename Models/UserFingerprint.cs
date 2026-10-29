@@ -16,18 +16,18 @@ public class UserFingerprint
 
 	[ForeignKey("User")]
 	public Guid UserId { get; set; }
-	public User User { get; set; }
+	public User User { get; set; } = null!;
 
 	/// <summary>رقم الإصبع 0-9 (0 = إبهام اليد اليمنى ... 9 = خنصر اليسرى).</summary>
 	public int FingerIndex { get; set; }
 
 	[Required]
-	public byte[] TemplateEncrypted { get; set; }
+	public byte[] TemplateEncrypted { get; set; } = null!;
 
 	/// <summary>خوارزمية القالب، لرفض مطابقة قوالب من محركات مختلفة.</summary>
 	[Required]
 	[MaxLength(32)]
-	public string Algorithm { get; set; }
+	public string Algorithm { get; set; } = string.Empty;
 
 	public bool IsActive { get; set; } = true;
 

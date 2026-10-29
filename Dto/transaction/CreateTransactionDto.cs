@@ -8,7 +8,7 @@ namespace cashbook.Dto.transaction;
 public class CreateTransactionDto
 {
 	/// <summary>cash in (إيداع) أو cash out (سحب).</summary>
-	public string Type { get; set; }
+	public string Type { get; set; } = string.Empty;
 
 	/// <summary>تاريخ القيد.</summary>
 	public DateTime Date { get; set; }

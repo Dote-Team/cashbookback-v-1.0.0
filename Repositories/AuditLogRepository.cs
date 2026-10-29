@@ -105,7 +105,7 @@ public class AuditLogRepository : IAuditLogRepository
 
 	public async Task<AuditLogDetailDto?> GetByIdAsync(long id, AuditLogQuery scope, CancellationToken cancellationToken = default(CancellationToken))
 	{
-		AuditLogDetailDto row = await (from a in ApplyScope(_context.AuditLogs.AsNoTracking(), scope)
+		AuditLogDetailDto? row = await (from a in ApplyScope(_context.AuditLogs.AsNoTracking(), scope)
 			where a.Id == id
 			select a).Select(DetailProjection).FirstOrDefaultAsync(cancellationToken);
 		if (row != null)
@@ -327,7 +327,7 @@ public class AuditLogRepository : IAuditLogRepository
 			return source;
 		}
 		Guid? businessId = scope.ScopeBusinessId;
-		List<Guid> scopeBookIds = scope.ScopeBookIds;
+		List<Guid>? scopeBookIds = scope.ScopeBookIds;
 		if (!businessId.HasValue && (scopeBookIds == null || scopeBookIds.Count == 0))
 		{
 			return source.Where((AuditLog a) => false);
@@ -339,7 +339,7 @@ public class AuditLogRepository : IAuditLogRepository
 	private static IQueryable<AuditLog> ApplySorting(IQueryable<AuditLog> source, AuditLogQuery query)
 	{
 		bool flag = !string.Equals(query.SortDirection, "asc", StringComparison.OrdinalIgnoreCase);
-		string text = query.SortBy?.ToLowerInvariant();
+		string? text = query.SortBy?.ToLowerInvariant();
 		IOrderedQueryable<AuditLog> result = text switch
 		{
 			"duration" => flag ? (from a in source

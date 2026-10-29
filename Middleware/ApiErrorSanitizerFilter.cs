@@ -23,7 +23,7 @@ public class ApiErrorSanitizerFilter : IAsyncResultFilter, IFilterMetadata
 	{
 		if (context.Result is ObjectResult { Value: APIResponse response } && response.ErrorMessages is { Count: > 0 })
 		{
-			List<string> sanitized = null;
+			List<string>? sanitized = null;
 			for (int i = 0; i < response.ErrorMessages.Count; i++)
 			{
 				string message = response.ErrorMessages[i];

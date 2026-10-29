@@ -80,8 +80,7 @@ public static class AuditNarrator
 		{
 			return "كيان";
 		}
-		string value;
-		return EntityLabels.TryGetValue(entityName, out value) ? value : entityName;
+		return EntityLabels.TryGetValue(entityName, out string? value) ? value : entityName;
 	}
 
 	public static string LabelField(string? fieldName)
@@ -90,8 +89,7 @@ public static class AuditNarrator
 		{
 			return "حقل";
 		}
-		string value;
-		return FieldLabels.TryGetValue(fieldName, out value) ? value : fieldName;
+		return FieldLabels.TryGetValue(fieldName, out string? value) ? value : fieldName;
 	}
 
 	public static string DescribeAction(string? action)
@@ -112,7 +110,7 @@ public static class AuditNarrator
 		}
 		string text2 = action.Substring(0, num);
 		string text3 = action.Substring(num + 1);
-		string text4 = (EntityLabels.TryGetValue(text2, out string value) ? value : text2);
+		string text4 = (EntityLabels.TryGetValue(text2, out string? value) ? value : text2);
 		string text5 = text3 switch
 		{
 			"create" => "إضافة", 

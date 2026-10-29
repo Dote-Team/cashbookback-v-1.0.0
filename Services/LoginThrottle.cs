@@ -27,7 +27,7 @@ public class LoginThrottle : ILoginThrottle
 	public bool IsBlocked(string key, out int retryAfterSeconds)
 	{
 		retryAfterSeconds = 0;
-		if (string.IsNullOrEmpty(key) || !_attempts.TryGetValue(key, out Attempt value))
+		if (string.IsNullOrEmpty(key) || !_attempts.TryGetValue(key, out Attempt? value))
 		{
 			return false;
 		}
@@ -39,7 +39,7 @@ public class LoginThrottle : ILoginThrottle
 		}
 		if (utcNow - value.FirstFailureUtc > Window)
 		{
-			_attempts.TryRemove(key, out Attempt _);
+			_attempts.TryRemove(key, out _);
 		}
 		return false;
 	}
@@ -56,7 +56,7 @@ public class LoginThrottle : ILoginThrottle
 		{
 			foreach (KeyValuePair<string, Attempt> stale in _attempts.Where(a => now - a.Value.FirstFailureUtc > Window && a.Value.BlockedUntilUtc < now))
 			{
-				_attempts.TryRemove(stale.Key, out Attempt _);
+				_attempts.TryRemove(stale.Key, out _);
 			}
 		}
 		_attempts.AddOrUpdate(key, (string _) => new Attempt
@@ -85,7 +85,7 @@ public class LoginThrottle : ILoginThrottle
 	{
 		if (!string.IsNullOrEmpty(key))
 		{
-			_attempts.TryRemove(key, out Attempt _);
+			_attempts.TryRemove(key, out _);
 		}
 	}
 }

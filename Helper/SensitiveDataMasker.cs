@@ -165,7 +165,7 @@ public static class SensitiveDataMasker
 
 	public static string? ToInvariantString(object? value)
 	{
-		string result = ((value == null) ? null : ((value is decimal num) ? num.ToString(CultureInfo.InvariantCulture) : ((value is double num2) ? num2.ToString(CultureInfo.InvariantCulture) : ((value is float num3) ? num3.ToString(CultureInfo.InvariantCulture) : ((value is DateTime dateTime) ? dateTime.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture) : ((value is DateTimeOffset dateTimeOffset) ? dateTimeOffset.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture) : ((!(value is byte[] array)) ? value.ToString() : $"<{array.Length} bytes>")))))));
+		string? result = ((value == null) ? null : ((value is decimal num) ? num.ToString(CultureInfo.InvariantCulture) : ((value is double num2) ? num2.ToString(CultureInfo.InvariantCulture) : ((value is float num3) ? num3.ToString(CultureInfo.InvariantCulture) : ((value is DateTime dateTime) ? dateTime.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture) : ((value is DateTimeOffset dateTimeOffset) ? dateTimeOffset.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture) : ((!(value is byte[] array)) ? value.ToString() : $"<{array.Length} bytes>")))))));
 		return result;
 	}
 }

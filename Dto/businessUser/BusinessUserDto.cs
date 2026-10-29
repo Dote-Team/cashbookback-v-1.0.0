@@ -14,11 +14,11 @@ public class BusinessUserDto
 
 	public Guid BusinessId { get; set; }
 
-	public string Role { get; set; }
+	public string? Role { get; set; }
 
-	public UserDto User { get; set; }
+	public UserDto? User { get; set; }
 
-	public List<BookDto> Books { get; set; }
+	public List<BookDto>? Books { get; set; }
 
-	public BusinessDto Business { get; set; }
+	public BusinessDto? Business { get; set; }
 }

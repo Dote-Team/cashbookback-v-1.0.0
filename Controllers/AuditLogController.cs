@@ -119,7 +119,7 @@ public class AuditLogController : ControllerBase
 		}
 		try
 		{
-			AuditLogDetailDto row = await _auditRepository.GetByIdAsync(id, ToScopeQuery(access));
+			AuditLogDetailDto? row = await _auditRepository.GetByIdAsync(id, ToScopeQuery(access));
 			if (row == null)
 			{
 				return NotFoundError("لا يوجد سطر بهذا الرقم، أو أنه خارج نطاق صلاحيتك.");
@@ -430,7 +430,7 @@ public class AuditLogController : ControllerBase
 	{
 		return from field in typeof(AuditAction).GetFields(BindingFlags.Static | BindingFlags.Public)
 			where field.IsLiteral && field.FieldType == typeof(string)
-			select (string)field.GetRawConstantValue() into value
+			select (string)field.GetRawConstantValue()! into value
 			orderby value
 			select value;
 	}
@@ -460,11 +460,11 @@ public class AuditLogController : ControllerBase
 		return text;
 	}
 
-	private ActionResult AccessDenied(string message)
+	private ActionResult AccessDenied(string? message)
 	{
 		_response.StatusCode = HttpStatusCode.Forbidden;
 		_response.IsSuccess = false;
-		_response.ErrorMessages = new List<string> { message };
+		_response.ErrorMessages = new List<string> { message ?? "لا تملك صلاحية الوصول إلى سجل التدقيق." };
 		return StatusCode(403, _response);
 	}
 
@@ -472,7 +472,7 @@ public class AuditLogController : ControllerBase
 	{
 		_response.StatusCode = HttpStatusCode.NotFound;
 		_response.IsSuccess = false;
-		_response.ErrorMessages = new List<string> { message };
+		_response.ErrorMessages = new List<string> { message ?? "لا تملك صلاحية الوصول إلى سجل التدقيق." };
 		return NotFound(_response);
 	}
 

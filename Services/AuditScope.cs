@@ -71,7 +71,7 @@ public sealed class AuditScope
 
 	public static IDisposable Begin(out AuditScope scope)
 	{
-		AuditScope value = Ambient.Value;
+		AuditScope? value = Ambient.Value;
 		scope = new AuditScope();
 		Ambient.Value = scope;
 		return new Restore(value);

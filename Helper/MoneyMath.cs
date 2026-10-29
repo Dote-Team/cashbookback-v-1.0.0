@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using cashbook.Models.Enums;
 
 namespace cashbook.Helper;
@@ -32,7 +33,7 @@ public static class MoneyMath
 		return amount == Round(amount, currency);
 	}
 
-	public static bool TryValidateAmount(decimal amount, CurrencyCode currency, out string? error)
+	public static bool TryValidateAmount(decimal amount, CurrencyCode currency, [NotNullWhen(false)] out string? error)
 	{
 		error = null;
 		if (amount <= 0m)
@@ -48,7 +49,7 @@ public static class MoneyMath
 		return true;
 	}
 
-	public static bool TryValidateRate(decimal? rate, out string? error)
+	public static bool TryValidateRate(decimal? rate, [NotNullWhen(false)] out string? error)
 	{
 		error = null;
 		if (!rate.HasValue || rate.Value <= 0m)

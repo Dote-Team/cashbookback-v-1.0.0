@@ -13,15 +13,15 @@ public class UserWalletPermission
 
 	[ForeignKey("User")]
 	public Guid UserId { get; set; }
-	public User User { get; set; }
+	public User User { get; set; } = null!;
 
 	[ForeignKey("Book")]
 	public Guid BookId { get; set; }
-	public Book Book { get; set; }
+	public Book Book { get; set; } = null!;
 
 	[Required]
 	[MaxLength(64)]
-	public string Permission { get; set; }
+	public string Permission { get; set; } = string.Empty;
 
 	public Guid? GrantedByUserId { get; set; }
 

@@ -16,15 +16,15 @@ public class BusinessUser
 	[ForeignKey("User")]
 	public Guid UserId { get; set; }
 
-	public User User { get; set; }
+	public User User { get; set; } = null!;
 
 	[Required]
 	[ForeignKey("Business")]
 	public Guid BusinessId { get; set; }
 
-	public Business Business { get; set; }
+	public Business Business { get; set; } = null!;
 
 	public List<Guid>? BookIds { get; set; }
 
-	public string Role { get; set; }
+	public string Role { get; set; } = string.Empty;
 }

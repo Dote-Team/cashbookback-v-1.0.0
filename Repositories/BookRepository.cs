@@ -147,7 +147,7 @@ public class BookRepository : Repository<Book>, IBookRepository, IRepository<Boo
 
 	public async Task<BookDetailsDto?> GetBookDetailsByIdAsync(Guid bookId)
 	{
-		Book book = await _context.Books.AsNoTracking().FirstOrDefaultAsync((Book b) => b.Id == bookId);
+		Book? book = await _context.Books.AsNoTracking().FirstOrDefaultAsync((Book b) => b.Id == bookId);
 		if (book == null)
 		{
 			return null;
@@ -194,7 +194,7 @@ public class BookRepository : Repository<Book>, IBookRepository, IRepository<Boo
 		}
 		decimal balanceIqd = cashInTotalIqd - cashOutTotalIqd;
 		decimal balanceUsd = cashInTotalUsd - cashOutTotalUsd;
-		Setting setting = await _context.Settings.FirstOrDefaultAsync((Setting s) => s.BookId == bookId);
+		Setting? setting = await _context.Settings.FirstOrDefaultAsync((Setting s) => s.BookId == bookId);
 		return new BookDetailsDto
 		{
 			Id = book.Id,
@@ -228,7 +228,7 @@ public class BookRepository : Repository<Book>, IBookRepository, IRepository<Boo
 	/// </summary>
 	public async Task<bool> ArchiveBookAsync(Guid bookId, Guid archivedByUserId, string? reason = null)
 	{
-		Book book = await _context.Books.FirstOrDefaultAsync((Book b) => b.Id == bookId);
+		Book? book = await _context.Books.FirstOrDefaultAsync((Book b) => b.Id == bookId);
 		if (book == null)
 		{
 			return false;
@@ -244,7 +244,7 @@ public class BookRepository : Repository<Book>, IBookRepository, IRepository<Boo
 
 	public async Task<bool> UpdateSettingAsync(Guid bookId, UpdateSettingDto dto)
 	{
-		Setting setting = await _context.Settings.FirstOrDefaultAsync((Setting s) => s.BookId == bookId);
+		Setting? setting = await _context.Settings.FirstOrDefaultAsync((Setting s) => s.BookId == bookId);
 		if (setting == null)
 		{
 			return false;

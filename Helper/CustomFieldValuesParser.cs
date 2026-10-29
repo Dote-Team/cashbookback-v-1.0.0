@@ -43,7 +43,7 @@ public static class CustomFieldValuesParser
             return true;
         }
 
-        List<CustomFieldValueCreateDto> parsed;
+        List<CustomFieldValueCreateDto>? parsed;
         try
         {
             parsed = JsonSerializer.Deserialize<List<CustomFieldValueCreateDto>>(json, Options);

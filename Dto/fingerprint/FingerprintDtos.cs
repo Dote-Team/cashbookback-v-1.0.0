@@ -16,7 +16,7 @@ public class FingerprintSampleDto
 	public int Dpi { get; set; } = 500;
 
 	/// <summary>الصورة الخام بصيغة Base64: بايت لكل بكسل (رمادي)، بطول Width × Height.</summary>
-	public string Pixels { get; set; }
+	public string Pixels { get; set; } = string.Empty;
 }
 
 public class EnrollFingerprintDto
@@ -37,7 +37,7 @@ public class FingerprintLoginDto
 	public string? Username { get; set; }
 
 	/// <summary>لقطة البصمة من البرنامج الوسيط.</summary>
-	public FingerprintSampleDto Sample { get; set; }
+	public FingerprintSampleDto Sample { get; set; } = null!;
 
 	/// <summary>اختياري: معرّف الجهاز.</summary>
 	public string? DeviceToken { get; set; }
@@ -49,7 +49,7 @@ public class FingerprintInfoDto
 
 	public int FingerIndex { get; set; }
 
-	public string Algorithm { get; set; }
+	public string Algorithm { get; set; } = string.Empty;
 
 	public DateTime CreatedAt { get; set; }
 
@@ -62,7 +62,7 @@ public class FingerprintStatusDto
 
 	public bool Available { get; set; }
 
-	public string Matcher { get; set; }
+	public string Matcher { get; set; } = string.Empty;
 
 	public int SamplesPerEnrollment { get; set; }
 

@@ -11,11 +11,11 @@ public class TransactionHistory
 	[DatabaseGenerated(DatabaseGeneratedOption.Identity)]
 	public Guid Id { get; set; }
 
-	public string Operation { get; set; }
+	public string Operation { get; set; } = string.Empty;
 
 	public string? Description { get; set; }
 
-	public string Type { get; set; }
+	public string Type { get; set; } = string.Empty;
 
 	public decimal? From { get; set; }
 
@@ -31,7 +31,7 @@ public class TransactionHistory
 	[ForeignKey("Book")]
 	public Guid BookId { get; set; }
 
-	public Book Book { get; set; }
+	public Book Book { get; set; } = null!;
 
 	[ForeignKey("Transaction")]
 	public Guid? TransactionId { get; set; }
@@ -42,7 +42,7 @@ public class TransactionHistory
 	[ForeignKey("User")]
 	public Guid UserId { get; set; }
 
-	public User User { get; set; }
+	public User User { get; set; } = null!;
 
 	[Required]
 	public DateTime CreatedAt { get; set; } = DateTime.Now;

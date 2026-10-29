@@ -5,7 +5,7 @@ namespace cashbook.Dto.customfield;
 public class CreateCustomFieldDto
 {
 	/// <summary>اسم الحقل، مثل «رقم الفاتورة».</summary>
-	public string Key { get; set; }
+	public string Key { get; set; } = string.Empty;
 
 	/// <summary>الخزنة.</summary>
 	public Guid BookId { get; set; }

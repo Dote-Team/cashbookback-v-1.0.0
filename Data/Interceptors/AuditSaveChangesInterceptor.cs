@@ -72,7 +72,7 @@ public sealed class AuditSaveChangesInterceptor : SaveChangesInterceptor
 		{
 			return;
 		}
-		AuditScope current = AuditScope.Current;
+		AuditScope? current = AuditScope.Current;
 		int num = ((_settings.MaxChangesPerSave > 0) ? _settings.MaxChangesPerSave : 200);
 		List<AuditLog> list = new List<AuditLog>();
 		int num2 = 0;
@@ -84,7 +84,7 @@ public sealed class AuditSaveChangesInterceptor : SaveChangesInterceptor
 			{
 				continue;
 			}
-			AuditLog auditLog = Build(item);
+			AuditLog? auditLog = Build(item);
 			if (auditLog != null)
 			{
 				if (list.Count >= num)
@@ -113,13 +113,13 @@ public sealed class AuditSaveChangesInterceptor : SaveChangesInterceptor
 
 	private void Publish()
 	{
-		List<AuditLog> value = _pending.Value;
+		List<AuditLog>? value = _pending.Value;
 		_pending.Value = null;
 		if (value == null || value.Count == 0)
 		{
 			return;
 		}
-		AuditScope current = AuditScope.Current;
+		AuditScope? current = AuditScope.Current;
 		if (current != null)
 		{
 			for (int i = 0; i < value.Count; i++)
@@ -144,14 +144,14 @@ public sealed class AuditSaveChangesInterceptor : SaveChangesInterceptor
 	private static AuditLog? Build(EntityEntry entry)
 	{
 		EntityState state = entry.State;
-		string text = state switch
+		string? text = state switch
 		{
 			EntityState.Added => "Added", 
 			EntityState.Modified => "Modified", 
 			EntityState.Deleted => "Deleted", 
 			_ => null, 
 		};
-		string text2 = text;
+		string? text2 = text;
 		if (text2 == null)
 		{
 			return null;
@@ -162,7 +162,7 @@ public sealed class AuditSaveChangesInterceptor : SaveChangesInterceptor
 		{
 			return null;
 		}
-		AuditScope current = AuditScope.Current;
+		AuditScope? current = AuditScope.Current;
 		return new AuditLog
 		{
 			OccurredAt = DateTime.UtcNow,
@@ -212,8 +212,8 @@ public sealed class AuditSaveChangesInterceptor : SaveChangesInterceptor
 				}
 				else if (property.IsModified)
 				{
-					string a = SensitiveDataMasker.ToInvariantString(property.OriginalValue);
-					string b = SensitiveDataMasker.ToInvariantString(property.CurrentValue);
+					string? a = SensitiveDataMasker.ToInvariantString(property.OriginalValue);
+					string? b = SensitiveDataMasker.ToInvariantString(property.CurrentValue);
 					if (!string.Equals(a, b, StringComparison.Ordinal))
 					{
 						list.Add(new AuditFieldChange(name, Masked(name, property.OriginalValue), Masked(name, property.CurrentValue)));
@@ -230,7 +230,7 @@ public sealed class AuditSaveChangesInterceptor : SaveChangesInterceptor
 
 	private static string? Masked(string fieldName, object? value)
 	{
-		string value2 = SensitiveDataMasker.ToInvariantString(value);
+		string? value2 = SensitiveDataMasker.ToInvariantString(value);
 		return SensitiveDataMasker.MaskValue(fieldName, value2);
 	}
 
@@ -265,7 +265,7 @@ public sealed class AuditSaveChangesInterceptor : SaveChangesInterceptor
 
 	private static AuditLog BuildTruncationNotice(int skipped)
 	{
-		AuditScope current = AuditScope.Current;
+		AuditScope? current = AuditScope.Current;
 		return new AuditLog
 		{
 			OccurredAt = DateTime.UtcNow,
@@ -287,7 +287,7 @@ public sealed class AuditSaveChangesInterceptor : SaveChangesInterceptor
 
 	private static string? ReadPrimaryKey(EntityEntry entry)
 	{
-		PropertyEntry propertyEntry = entry.Properties.FirstOrDefault((PropertyEntry p) => p.Metadata.IsPrimaryKey());
+		PropertyEntry? propertyEntry = entry.Properties.FirstOrDefault((PropertyEntry p) => p.Metadata.IsPrimaryKey());
 		if (propertyEntry == null)
 		{
 			return null;

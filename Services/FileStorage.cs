@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
@@ -53,6 +54,7 @@ public interface IFileStorage
 	/// اسم الملف مع توقيع مؤقت: name?exp=..&amp;sig=.. . الواجهة تضيفه إلى /API/Files/ كما هو،
 	/// فيعمل داخل وسم img الذي لا يرسل رمز الدخول.
 	/// </summary>
+	[return: NotNullIfNotNull(nameof(fileName))]
 	string? SignedName(string? fileName);
 
 	bool VerifySignature(string fileName, long expires, string? signature);
@@ -198,6 +200,7 @@ public sealed class FileStorage : IFileStorage
 
 	public bool IsAllowedExtension(string fileName) => AllowedExtensions.Contains(Path.GetExtension(fileName ?? string.Empty));
 
+	[return: NotNullIfNotNull(nameof(fileName))]
 	public string? SignedName(string? fileName)
 	{
 		if (string.IsNullOrWhiteSpace(fileName))

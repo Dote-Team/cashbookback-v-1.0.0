@@ -11,7 +11,7 @@ public class TrashItem
 	public Guid Id { get; set; }
 
 	[Required]
-	public string EntityType { get; set; }
+	public string EntityType { get; set; } = string.Empty;
 
 	public Guid EntityId { get; set; }
 

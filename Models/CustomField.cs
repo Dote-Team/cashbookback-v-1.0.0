@@ -13,13 +13,13 @@ public class CustomField : IArchivable
 	public Guid Id { get; set; }
 
 	[Required]
-	public string Key { get; set; }
+	public string Key { get; set; } = string.Empty;
 
 	[Required]
 	[ForeignKey("Book")]
 	public Guid BookId { get; set; }
 
-	public Book Book { get; set; }
+	public Book Book { get; set; } = null!;
 
 	[Required]
 	public bool IsRequired { get; set; }

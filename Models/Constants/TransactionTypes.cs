@@ -18,7 +18,7 @@ public static class TransactionTypes
 		{
 			text = text.Replace("  ", " ");
 		}
-		string result;
+		string? result;
 		switch (text)
 		{
 		case "cash in":
@@ -69,7 +69,7 @@ public static class TransactionTypes
 
 	public static int Direction(string? type)
 	{
-		string text = Normalize(type);
+		string? text = Normalize(type);
 		int result = ((text == "cash in") ? 1 : ((text == "cash out") ? (-1) : 0));
 		return result;
 	}

@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Net;
 using System.Text;
@@ -60,7 +61,7 @@ public sealed class AuditLogMiddleware
 			TryExtractUsernameFromBody(scope);
 			scope.Action = AuditNarrator.Classify(context.Request.Method, context.Request.Path, 200, scope.RequestBody).Action;
 			Stopwatch stopwatch = Stopwatch.StartNew();
-			Exception failure = null;
+			Exception? failure = null;
 			try
 			{
 				await _next(context);
@@ -179,7 +180,7 @@ public sealed class AuditLogMiddleware
 		{
 			scope.SessionId = result;
 		}
-		if (context.Items.TryGetValue("Audit:DeviceToken", out object value))
+		if (context.Items.TryGetValue("Audit:DeviceToken", out object? value))
 		{
 			scope.DeviceToken = Truncate(value?.ToString(), 200);
 		}
@@ -194,7 +195,7 @@ public sealed class AuditLogMiddleware
 		try
 		{
 			JObject jObject = JObject.Parse(scope.RequestBody);
-			string value = jObject["username"]?.ToString();
+			string? value = jObject["username"]?.ToString();
 			if (!string.IsNullOrWhiteSpace(value))
 			{
 				scope.Username = Truncate(value, 100);
@@ -239,7 +240,7 @@ public sealed class AuditLogMiddleware
 		{
 			return false;
 		}
-		string contentType = request.ContentType;
+		string? contentType = request.ContentType;
 		if (string.IsNullOrEmpty(contentType))
 		{
 			return false;
@@ -253,7 +254,7 @@ public sealed class AuditLogMiddleware
 		{
 			return true;
 		}
-		string value = request.Path.Value;
+		string? value = request.Path.Value;
 		if (string.IsNullOrEmpty(value))
 		{
 			return false;
@@ -271,7 +272,7 @@ public sealed class AuditLogMiddleware
 
 	private static Guid? ExtractBusinessId(HttpContext context)
 	{
-		if (context.Request.RouteValues.TryGetValue("businessId", out object value) && Guid.TryParse(value?.ToString(), out var result))
+		if (context.Request.RouteValues.TryGetValue("businessId", out object? value) && Guid.TryParse(value?.ToString(), out var result))
 		{
 			return result;
 		}
@@ -284,7 +285,7 @@ public sealed class AuditLogMiddleware
 
 	private static string? ResolveClientIp(HttpContext context)
 	{
-		IPAddress remoteIpAddress = context.Connection.RemoteIpAddress;
+		IPAddress? remoteIpAddress = context.Connection.RemoteIpAddress;
 		if (remoteIpAddress != null && !IPAddress.IsLoopback(remoteIpAddress))
 		{
 			return Truncate(remoteIpAddress.ToString(), 64);
@@ -301,6 +302,7 @@ public sealed class AuditLogMiddleware
 		return (remoteIpAddress == null) ? null : Truncate(remoteIpAddress.ToString(), 64);
 	}
 
+	[return: NotNullIfNotNull(nameof(value))]
 	private static string? Truncate(string? value, int maxLength)
 	{
 		if (string.IsNullOrEmpty(value))

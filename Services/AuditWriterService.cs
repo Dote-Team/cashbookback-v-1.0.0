@@ -53,7 +53,7 @@ public sealed class AuditWriterService : BackgroundService
 					break;
 				}
 				batch.Clear();
-				AuditLog entry;
+				AuditLog? entry;
 				while (batch.Count < maxBatch && reader.TryRead(out entry))
 				{
 					batch.Add(entry);
@@ -111,7 +111,7 @@ public sealed class AuditWriterService : BackgroundService
 	private async Task DrainAsync(CancellationToken cancellationToken)
 	{
 		List<AuditLog> remaining = new List<AuditLog>();
-		AuditLog entry;
+		AuditLog? entry;
 		while (_logger.Reader.TryRead(out entry))
 		{
 			remaining.Add(entry);
