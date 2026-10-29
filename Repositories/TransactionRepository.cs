@@ -121,15 +121,18 @@ public class TransactionRepository : Repository<Transaction>, ITransactionReposi
         }
     }
 
-    public async Task<bool> DeleteTransactionAsync(Guid transactionId)
+    public async Task<bool> DeleteTransactionAsync(Guid transactionId, Guid? deletedByUserId = null)
     {
         Transaction transaction = await _context.Transactions.Include((Transaction t) => t.CustomFieldValues).Include((Transaction t) => t.Attachements).FirstOrDefaultAsync((Transaction t) => t.Id == transactionId);
         if (transaction == null)
         {
             return false;
         }
+        bool moveToTrash = deletedByUserId.HasValue;
+        TrashRelatedData related = new TrashRelatedData();
         TransactionHistory transactionHistory = new TransactionHistory
         {
+            Id = Guid.NewGuid(),
             Operation = "DELETE",
             Description = transaction.Description,
             Amount = transaction.Amount,
@@ -144,12 +147,24 @@ public class TransactionRepository : Repository<Transaction>, ITransactionReposi
             CreatedAt = DateTime.UtcNow
         };
         _context.TransactionHistories.Add(transactionHistory);
+        if (moveToTrash)
+        {
+            // نسخة كاملة كي ترجع الحركة بمرفقاتها وقيم حقولها عند الاستعادة.
+            TrashHelper.AddRows(related, "Attachements", transaction.Attachements);
+            TrashHelper.AddRows(related, "CustomFieldValues", transaction.CustomFieldValues);
+            TrashHelper.AddDeleteRow(related, "TransactionHistories", new Dictionary<string, object> { ["Id"] = transactionHistory.Id });
+        }
         string uploadsFolder = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads");
         if (transaction.Attachements != null && transaction.Attachements.Any())
         {
             foreach (Attachement attachment in transaction.Attachements)
             {
                 if (string.IsNullOrEmpty(attachment.Files))
+                {
+                    continue;
+                }
+                // الملفات تبقى على القرص حتى الحذف النهائي، وإلا تعذّرت الاستعادة.
+                if (moveToTrash)
                 {
                     continue;
                 }
@@ -172,6 +187,12 @@ public class TransactionRepository : Repository<Transaction>, ITransactionReposi
         if (transaction.CustomFieldValues != null && transaction.CustomFieldValues.Any())
         {
             _context.CustomFieldValues.RemoveRange(transaction.CustomFieldValues);
+        }
+        if (moveToTrash)
+        {
+            TrashItem trashItem = TrashHelper.Build(transaction, deletedByUserId);
+            trashItem.RelatedJson = TrashHelper.Serialize(related);
+            _context.TrashItems.Add(trashItem);
         }
         _context.Transactions.Remove(transaction);
         await _context.SaveChangesAsync();

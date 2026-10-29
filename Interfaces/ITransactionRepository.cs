@@ -12,7 +12,7 @@ public interface ITransactionRepository : IRepository<Transaction>
 {
 	Task<bool> CreateTransactionAsync(CreateTransactionDto dto, Guid userId);
 
-	Task<bool> DeleteTransactionAsync(Guid transactionId);
+	Task<bool> DeleteTransactionAsync(Guid transactionId, Guid? deletedByUserId = null);
 
 	Task<bool> UpdateTransactionAsync(UpdateTransactionDto dto, Guid Id);
 

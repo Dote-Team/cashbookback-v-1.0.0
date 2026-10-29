@@ -11,6 +11,7 @@ using cashbook.Dto.book;
 using cashbook.Dto.business;
 using cashbook.Dto.businessUser;
 using cashbook.Dto.user;
+using cashbook.Helper;
 using cashbook.Interfaces;
 using cashbook.Models;
 
@@ -198,12 +199,19 @@ public class BusinessUserRepository : Repository<BusinessUser>, IBusinessUserRep
 		};
 	}
 
-	public async Task<bool> DeleteBusinessUsersRange(Guid businessId, Guid userId)
+	public async Task<bool> DeleteBusinessUsersRange(Guid businessId, Guid userId, Guid? deletedByUserId = null)
 	{
 		List<BusinessUser> businessUsers = await _context.BusinessUsers.Where((BusinessUser bu) => bu.BusinessId == businessId && bu.UserId == userId).ToListAsync();
 		if (!businessUsers.Any())
 		{
 			return false;
+		}
+		if (deletedByUserId.HasValue)
+		{
+			foreach (BusinessUser businessUser in businessUsers)
+			{
+				_context.TrashItems.Add(TrashHelper.Build(businessUser, deletedByUserId.Value));
+			}
 		}
 		_context.BusinessUsers.RemoveRange(businessUsers);
 		await _context.SaveChangesAsync();

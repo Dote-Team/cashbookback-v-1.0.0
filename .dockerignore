@@ -1,0 +1,43 @@
+# ملفات لا تُرسَل إلى محرّك Docker عند البناء (تعجيل البناء وتقليل الحجم)
+
+# مخرجات البناء — تُبنى داخل الصورة من جديد
+**/bin/
+**/obj/
+**/out/
+**/publish/
+**/Release/
+**/Debug/
+
+# مجلدات المحرّرات
+**/.vs/
+**/.vscode/
+**/.idea/
+
+# مستودع Git
+**/.git/
+**/.gitignore
+**/.gitattributes
+
+# ===== الأسرار: لا تدخل الصورة مطلقاً =====
+# القيم الحسّاسة تُمرَّر وقت التشغيل: إمّا متغيّرات بيئة في docker-compose،
+# أو ملف .env يُثبَّت (volume) أو env_file — وأي منها لا يُخبَز في طبقة الصورة.
+.env
+.env.*
+*.pfx
+*.p12
+
+# أدوات Docker نفسها (Docker يقرأ Dockerfile بنفسه ولا يحتاجه في السياق)
+Dockerfile*
+docker-compose*
+
+# ملفات توثيق وتطوير
+*.md
+*.http
+*.user
+*.suo
+*.userprefs
+swagger.json
+
+# مرفقات التطوير المحلية — في الإنتاج يأتي مكانها volume فارغ
+wwwroot/uploads/*
+!wwwroot/uploads/.gitkeep

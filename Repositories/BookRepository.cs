@@ -319,9 +319,10 @@ public class BookRepository : Repository<Book>, IBookRepository, IRepository<Boo
 		};
 	}
 
-	public async Task<bool> DeleteBookAsync(Guid bookId)
+	public async Task<bool> DeleteBookAsync(Guid bookId, Guid? deletedByUserId = null)
 	{
-		Book book = await _context.Books.Include((Book b) => b.CustomFields).Include((Book b) => b.Transactions).ThenInclude((Transaction t) => t.Attachements)
+		Book book = await _context.Books.AsSplitQuery().Include((Book b) => b.CustomFields).Include((Book b) => b.Settings).Include((Book b) => b.Transactions)
+			.ThenInclude((Transaction t) => t.Attachements)
 			.Include((Book b) => b.Transactions)
 			.ThenInclude((Transaction t) => t.CustomFieldValues)
 			.FirstOrDefaultAsync((Book b) => b.Id == bookId);
@@ -329,15 +330,36 @@ public class BookRepository : Repository<Book>, IBookRepository, IRepository<Boo
 		{
 			return false;
 		}
+		bool moveToTrash = deletedByUserId.HasValue;
+		TrashRelatedData related = new TrashRelatedData();
 		string uploadsFolder = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads");
 		List<Attachement> attachments = book.Transactions.SelectMany(delegate(Transaction t)
 		{
 			IEnumerable<Attachement> attachements = t.Attachements;
 			return attachements ?? Enumerable.Empty<Attachement>();
 		}).ToList();
+		List<CustomFieldValue> customFieldValues = book.Transactions.SelectMany(delegate(Transaction t)
+		{
+			IEnumerable<CustomFieldValue> customFieldValues2 = t.CustomFieldValues;
+			return customFieldValues2 ?? Enumerable.Empty<CustomFieldValue>();
+		}).ToList();
+		if (moveToTrash)
+		{
+			// نسخة كاملة من كل ما يحذفه حذف الخزنة كي ترجع كاملة عند الاستعادة.
+			TrashHelper.AddRows(related, "CustomFields", book.CustomFields);
+			TrashHelper.AddRows(related, "Settings", book.Settings);
+			TrashHelper.AddRows(related, "Transactions", book.Transactions);
+			TrashHelper.AddRows(related, "Attachements", attachments);
+			TrashHelper.AddRows(related, "CustomFieldValues", customFieldValues);
+		}
 		foreach (Attachement attachment in attachments)
 		{
 			if (string.IsNullOrEmpty(attachment.Files))
+			{
+				continue;
+			}
+			// الملفات تبقى على القرص حتى الحذف النهائي، وإلا تعذّرت الاستعادة.
+			if (moveToTrash)
 			{
 				continue;
 			}
@@ -359,11 +381,6 @@ public class BookRepository : Repository<Book>, IBookRepository, IRepository<Boo
 		{
 			_context.Attachements.RemoveRange(attachments);
 		}
-		List<CustomFieldValue> customFieldValues = book.Transactions.SelectMany(delegate(Transaction t)
-		{
-			IEnumerable<CustomFieldValue> customFieldValues2 = t.CustomFieldValues;
-			return customFieldValues2 ?? Enumerable.Empty<CustomFieldValue>();
-		}).ToList();
 		if (customFieldValues.Any())
 		{
 			_context.CustomFieldValues.RemoveRange(customFieldValues);
@@ -375,6 +392,12 @@ public class BookRepository : Repository<Book>, IBookRepository, IRepository<Boo
 		if (book.CustomFields != null && book.CustomFields.Any())
 		{
 			_context.CustomFields.RemoveRange(book.CustomFields);
+		}
+		if (moveToTrash)
+		{
+			TrashItem trashItem = TrashHelper.Build(book, deletedByUserId);
+			trashItem.RelatedJson = TrashHelper.Serialize(related);
+			_context.TrashItems.Add(trashItem);
 		}
 		_context.Books.Remove(book);
 		await _context.SaveChangesAsync();

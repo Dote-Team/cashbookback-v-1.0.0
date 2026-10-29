@@ -269,7 +269,7 @@ public class CustomFieldController : ControllerBase
 			{
 				return FieldDenied(access, "لا تملك صلاحية حذف حقل من هذه الخزنة.");
 			}
-			await _customFieldRepository.RemoveAsync(customField);
+			await _customFieldRepository.TrashAsync(customField, callerId);
 			_response.StatusCode = HttpStatusCode.NoContent;
 			_response.IsSuccess = true;
 			return Ok(_response);

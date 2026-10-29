@@ -49,53 +49,39 @@ public class UserRepository : Repository<User>, IUserRepository, IRepository<Use
 		return (IsSuperAdmin: user.IsSuperAdmin, CanManage: user.IsSuperAdmin || businessIds.Any(), BusinessIds: businessIds);
 	}
 
+	// ملاحظة مهمّة: هذه الدوال لا تبتلع الاستثناءات عمداً.
+	// كان كلٌّ منها يلتقط أي استثناء ويعيد false، و«false» هنا تعني
+	// «الاسم أو البريد محجوز». فكان أي عطل في قاعدة البيانات — سلسلة اتصال
+	// خاطئة أو خادم متوقف — يظهر للمستخدم برسالة كاذبة: "Username already exists".
+	// وقع هذا فعلاً أثناء اختبار النشر: القاعدة كانت فارغة تماماً (صفر مستخدمين)
+	// والواجهة ترد 409. الآن ينتشر الاستثناء إلى catch في الكونترولر، فيُسجَّل
+	// العطل الحقيقي في السجل وتعود رسالة عامّة بدل رسالة مضلّلة.
 	public async Task<bool> IsPasswordCorrect(RegisterationRequestDto registerationRequestDto)
 	{
-		try
-		{
-			User user = await _context.Users.FirstOrDefaultAsync((User u) => u.Email == registerationRequestDto.Email);
-			return user != null && BCrypt.Net.BCrypt.Verify(registerationRequestDto.Password, user.Password);
-		}
-		catch (Exception)
-		{
-			return false;
-		}
+		User user = await _context.Users.FirstOrDefaultAsync((User u) => u.Email == registerationRequestDto.Email);
+		return user != null && BCrypt.Net.BCrypt.Verify(registerationRequestDto.Password, user.Password);
 	}
 
 	public async Task<bool> IsUniqueUser(string email)
 	{
-		try
-		{
-			return !(await _context.Users.AnyAsync((User u) => u.Email == email));
-		}
-		catch (Exception)
-		{
-			return false;
-		}
+		return !(await _context.Users.AnyAsync((User u) => u.Email == email));
 	}
 
 	public async Task<bool> IsUsernameAvailableAsync(string username)
 	{
-		try
-		{
-			if (string.IsNullOrWhiteSpace(username))
-			{
-				return false;
-			}
-			string normalized = username.Trim().ToLower();
-			return !(await _context.Users.AnyAsync((User u) => u.Username.ToLower() == normalized));
-		}
-		catch (Exception)
+		if (string.IsNullOrWhiteSpace(username))
 		{
 			return false;
 		}
+		string normalized = username.Trim().ToLower();
+		return !(await _context.Users.AnyAsync((User u) => u.Username.ToLower() == normalized));
 	}
 
 	private static string BuildInternalEmail(string username)
 	{
 		string text = new string((from c in (username ?? "user").Trim().ToLowerInvariant()
-			where char.IsLetterOrDigit(c) || c == '.' || c == '_' || c == '-'
-			select c).ToArray());
+								  where char.IsLetterOrDigit(c) || c == '.' || c == '_' || c == '-'
+								  select c).ToArray());
 		if (string.IsNullOrWhiteSpace(text))
 		{
 			text = "user";
@@ -194,7 +180,7 @@ public class UserRepository : Repository<User>, IUserRepository, IRepository<Use
 				return false;
 			}
 		}
-		IL_0777:
+	IL_0777:
 		throw null;
 	}
 
@@ -378,16 +364,16 @@ public class UserRepository : Repository<User>, IUserRepository, IRepository<Use
 		}
 		int totalRecords = await query.CountAsync();
 		List<UserDto> users = await (from u in query.OrderByDescending((User u) => u.CreatedAt).Skip((currentPage - 1) * currentPageSize).Take(currentPageSize)
-			select new UserDto
-			{
-				Id = u.Id,
-				Username = u.Username,
-				Email = u.Email,
-				Name = u.Name,
-				Role = ((from bu in u.BusinessUsers
-					where bu.BusinessId == businessId
-					select bu.Role).FirstOrDefault() ?? "")
-			}).ToListAsync();
+									 select new UserDto
+									 {
+										 Id = u.Id,
+										 Username = u.Username,
+										 Email = u.Email,
+										 Name = u.Name,
+										 Role = ((from bu in u.BusinessUsers
+												  where bu.BusinessId == businessId
+												  select bu.Role).FirstOrDefault() ?? "")
+									 }).ToListAsync();
 		return new PaginatedResponse<UserDto>
 		{
 			TotalRecords = totalRecords,
@@ -400,22 +386,22 @@ public class UserRepository : Repository<User>, IUserRepository, IRepository<Use
 	public async Task<UserDto?> GetUserByIdAsync(Guid userId, Guid businessId)
 	{
 		return await (from u in _context.Users
-			where u.Id == userId && u.BusinessUsers.Any((BusinessUser bu) => bu.BusinessId == businessId)
-			select new UserDto
-			{
-				Id = u.Id,
-				Username = u.Username,
-				Email = u.Email,
-				Name = u.Name,
-				CreatedAt = u.CreatedAt,
-				UpdatedAt = u.UpdatedAt,
-				Role = ((from bu in u.BusinessUsers
-					where bu.BusinessId == businessId
-					select bu.Role).FirstOrDefault() ?? ""),
-				BusinessName = ((from bu in u.BusinessUsers
-					where bu.BusinessId == businessId
-					select bu.Business.Name).FirstOrDefault() ?? "")
-			}).FirstOrDefaultAsync();
+					  where u.Id == userId && u.BusinessUsers.Any((BusinessUser bu) => bu.BusinessId == businessId)
+					  select new UserDto
+					  {
+						  Id = u.Id,
+						  Username = u.Username,
+						  Email = u.Email,
+						  Name = u.Name,
+						  CreatedAt = u.CreatedAt,
+						  UpdatedAt = u.UpdatedAt,
+						  Role = ((from bu in u.BusinessUsers
+								   where bu.BusinessId == businessId
+								   select bu.Role).FirstOrDefault() ?? ""),
+						  BusinessName = ((from bu in u.BusinessUsers
+										   where bu.BusinessId == businessId
+										   select bu.Business.Name).FirstOrDefault() ?? "")
+					  }).FirstOrDefaultAsync();
 	}
 
 	public async Task<bool> RemoveUserAsync(Guid id)
@@ -440,7 +426,7 @@ public class UserRepository : Repository<User>, IUserRepository, IRepository<Use
 				return false;
 			}
 		}
-		IL_036f:
+	IL_036f:
 		throw null;
 	}
 

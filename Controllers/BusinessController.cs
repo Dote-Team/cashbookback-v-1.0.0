@@ -179,7 +179,7 @@ public class BusinessController : ControllerBase
 				_response.ErrorMessages = new List<string> { "Invalid business ID." };
 				return BadRequest(_response);
 			}
-			if (!(await _businessRepository.DeleteBusinessAsync(id)))
+			if (!(await _businessRepository.DeleteBusinessAsync(id, userId)))
 			{
 				_response.IsSuccess = false;
 				_response.StatusCode = HttpStatusCode.NotFound;

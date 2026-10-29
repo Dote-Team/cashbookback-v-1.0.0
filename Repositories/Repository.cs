@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
 using cashbook.Data;
+using cashbook.Helper;
 using cashbook.Interfaces;
 using cashbook.Models;
 
@@ -108,6 +109,13 @@ public class Repository<T> : IRepository<T> where T : class
 
 	public async Task RemoveAsync(T entity)
 	{
+		dbSet.Remove(entity);
+		await SaveAsync();
+	}
+
+	public async Task TrashAsync(T entity, Guid? deletedByUserId)
+	{
+		_db.TrashItems.Add(TrashHelper.Build(entity, deletedByUserId));
 		dbSet.Remove(entity);
 		await SaveAsync();
 	}

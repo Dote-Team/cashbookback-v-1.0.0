@@ -273,6 +273,10 @@ public class UserController : ControllerBase
 				_response.ErrorMessages = new List<string> { "Only the super admin can remove the business owner." };
 				return StatusCode(403, _response);
 			}
+			foreach (BusinessUser membership in memberships)
+			{
+				_context.TrashItems.Add(TrashHelper.Build(membership, callerId.Value));
+			}
 			_context.BusinessUsers.RemoveRange(memberships);
 			await _context.SaveChangesAsync();
 			_response.StatusCode = HttpStatusCode.NoContent;

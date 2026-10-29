@@ -9,6 +9,7 @@ using Swashbuckle.AspNetCore.Annotations;
 using cashbook.Data;
 using cashbook.Dto;
 using cashbook.Dto.contact;
+using cashbook.Helper;
 using cashbook.Interfaces;
 using cashbook.Models;
 
@@ -150,12 +151,20 @@ public class ContactController : ControllerBase
 			{
 				return BadRequest("Invalid contact ID.");
 			}
+			Guid? callerId = base.User.GetUserId();
+			if (!callerId.HasValue)
+			{
+				_response.StatusCode = HttpStatusCode.Unauthorized;
+				_response.IsSuccess = false;
+				_response.ErrorMessages = new List<string> { "Invalid token." };
+				return Unauthorized(_response);
+			}
 			Contact contact = await _contactRepository.GetAsync((Contact u) => u.Id == id);
 			if (contact == null)
 			{
 				return NotFound("Contact not found.");
 			}
-			await _contactRepository.RemoveAsync(contact);
+			await _contactRepository.TrashAsync(contact, callerId);
 			_response.StatusCode = HttpStatusCode.NoContent;
 			_response.IsSuccess = true;
 			return Ok(_response);

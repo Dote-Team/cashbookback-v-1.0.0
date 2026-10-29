@@ -9,6 +9,7 @@ using Swashbuckle.AspNetCore.Annotations;
 using cashbook.Data;
 using cashbook.Dto;
 using cashbook.Dto.paymentMethod;
+using cashbook.Helper;
 using cashbook.Interfaces;
 using cashbook.Models;
 
@@ -150,12 +151,20 @@ public class PaymentMethodController : ControllerBase
 			{
 				return BadRequest("Invalid paymentMethod ID.");
 			}
+			Guid? callerId = base.User.GetUserId();
+			if (!callerId.HasValue)
+			{
+				_response.StatusCode = HttpStatusCode.Unauthorized;
+				_response.IsSuccess = false;
+				_response.ErrorMessages = new List<string> { "Invalid token." };
+				return Unauthorized(_response);
+			}
 			PaymentMethod paymentMethod = await _paymentMethodRepository.GetAsync((PaymentMethod u) => u.Id == id);
 			if (paymentMethod == null)
 			{
 				return NotFound("PaymentMethod not found.");
 			}
-			await _paymentMethodRepository.RemoveAsync(paymentMethod);
+			await _paymentMethodRepository.TrashAsync(paymentMethod, callerId);
 			_response.StatusCode = HttpStatusCode.NoContent;
 			_response.IsSuccess = true;
 			return Ok(_response);

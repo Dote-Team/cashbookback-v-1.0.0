@@ -16,7 +16,7 @@ public interface IBookRepository : IRepository<Book>
 
 	Task<BookDetailsDto?> GetBookDetailsByIdAsync(Guid bookId, Guid userId);
 
-	Task<bool> DeleteBookAsync(Guid bookId);
+	Task<bool> DeleteBookAsync(Guid bookId, Guid? deletedByUserId = null);
 
 	Task<bool> UpdateSettingAsync(Guid bookId, UpdateSettingDto dto);
 }

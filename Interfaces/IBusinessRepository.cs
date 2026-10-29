@@ -15,5 +15,5 @@ public interface IBusinessRepository : IRepository<Business>
 
 	Task<BusinessWithBooksDto?> GetBusinessWithBooksDtoByIdAsync(Guid Id);
 
-	Task<bool> DeleteBusinessAsync(Guid businessId);
+	Task<bool> DeleteBusinessAsync(Guid businessId, Guid? deletedByUserId = null);
 }

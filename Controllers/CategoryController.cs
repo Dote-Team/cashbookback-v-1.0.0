@@ -9,6 +9,7 @@ using Swashbuckle.AspNetCore.Annotations;
 using cashbook.Data;
 using cashbook.Dto;
 using cashbook.Dto.category;
+using cashbook.Helper;
 using cashbook.Interfaces;
 using cashbook.Models;
 
@@ -150,12 +151,20 @@ public class CategoryController : ControllerBase
 			{
 				return BadRequest("Invalid category ID.");
 			}
+			Guid? callerId = base.User.GetUserId();
+			if (!callerId.HasValue)
+			{
+				_response.StatusCode = HttpStatusCode.Unauthorized;
+				_response.IsSuccess = false;
+				_response.ErrorMessages = new List<string> { "Invalid token." };
+				return Unauthorized(_response);
+			}
 			Category category = await _categoryRepository.GetAsync((Category u) => u.Id == id);
 			if (category == null)
 			{
 				return NotFound("Category not found.");
 			}
-			await _categoryRepository.RemoveAsync(category);
+			await _categoryRepository.TrashAsync(category, callerId);
 			_response.StatusCode = HttpStatusCode.NoContent;
 			_response.IsSuccess = true;
 			return Ok(_response);

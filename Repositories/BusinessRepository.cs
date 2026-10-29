@@ -10,6 +10,7 @@ using cashbook.Data;
 using cashbook.Dto;
 using cashbook.Dto.book;
 using cashbook.Dto.business;
+using cashbook.Helper;
 using cashbook.Interfaces;
 using cashbook.Models;
 
@@ -132,33 +133,69 @@ public class BusinessRepository : Repository<Business>, IBusinessRepository, IRe
 		};
 	}
 
-	public async Task<bool> DeleteBusinessAsync(Guid businessId)
+	public async Task<bool> DeleteBusinessAsync(Guid businessId, Guid? deletedByUserId = null)
 	{
-		Business business = await _context.Businesses.Include((Business b) => b.Books).ThenInclude((Book book) => book.Transactions).ThenInclude((Transaction t) => t.Attachements)
+		Business business = await _context.Businesses.AsSplitQuery().Include((Business b) => b.Books).ThenInclude((Book book) => book.Transactions).ThenInclude((Transaction t) => t.Attachements)
 			.Include((Business b) => b.BusinessUsers)
 			.Include((Business b) => b.Categories)
 			.Include((Business b) => b.Contacts)
 			.Include((Business b) => b.PaymentMethods)
 			.Include((Business b) => b.Books)
 			.ThenInclude((Book book) => book.CustomFields)
+			.Include((Business b) => b.Books)
+			.ThenInclude((Book book) => book.Settings)
+			.Include((Business b) => b.Books)
+			.ThenInclude((Book book) => book.Transactions)
+			.ThenInclude((Transaction t) => t.CustomFieldValues)
 			.FirstOrDefaultAsync((Business b) => b.Id == businessId);
 		if (business == null)
 		{
 			return false;
 		}
+		bool moveToTrash = deletedByUserId.HasValue;
+		TrashRelatedData related = new TrashRelatedData();
 		string uploadsFolder = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads");
-		List<Attachement> attachments = business.Books.SelectMany(delegate(Book book)
+		List<Transaction> businessTransactions = business.Books.SelectMany(delegate(Book book)
 		{
 			IEnumerable<Transaction> transactions2 = book.Transactions;
 			return transactions2 ?? Enumerable.Empty<Transaction>();
-		}).SelectMany(delegate(Transaction t)
+		}).ToList();
+		List<Attachement> attachments = businessTransactions.SelectMany(delegate(Transaction t)
 		{
 			IEnumerable<Attachement> attachements = t.Attachements;
 			return attachements ?? Enumerable.Empty<Attachement>();
 		}).ToList();
+		List<CustomField> customFields = business.Books.SelectMany(delegate(Book book)
+		{
+			IEnumerable<CustomField> customFields2 = book.CustomFields;
+			return customFields2 ?? Enumerable.Empty<CustomField>();
+		}).ToList();
+		List<Setting> settings = business.Books.SelectMany(delegate(Book book)
+		{
+			IEnumerable<Setting> settings2 = book.Settings;
+			return settings2 ?? Enumerable.Empty<Setting>();
+		}).ToList();
+		if (moveToTrash)
+		{
+			// نسخة كاملة من كل ما يحذفه حذف المنشأة كي ترجع كاملة عند الاستعادة.
+			TrashHelper.AddRows(related, "BusinessUsers", business.BusinessUsers);
+			TrashHelper.AddRows(related, "Categories", business.Categories);
+			TrashHelper.AddRows(related, "Contacts", business.Contacts);
+			TrashHelper.AddRows(related, "PaymentMethods", business.PaymentMethods);
+			TrashHelper.AddRows(related, "Books", business.Books);
+			TrashHelper.AddRows(related, "CustomFields", customFields);
+			TrashHelper.AddRows(related, "Settings", settings);
+			TrashHelper.AddRows(related, "Transactions", businessTransactions);
+			TrashHelper.AddRows(related, "Attachements", attachments);
+		}
 		foreach (Attachement attachment in attachments)
 		{
 			if (string.IsNullOrEmpty(attachment.Files))
+			{
+				continue;
+			}
+			// الملفات تبقى على القرص حتى الحذف النهائي، وإلا تعذّرت الاستعادة.
+			if (moveToTrash)
 			{
 				continue;
 			}
@@ -176,13 +213,12 @@ public class BusinessRepository : Repository<Business>, IBusinessRepository, IRe
 				}
 			}
 		}
-		List<Guid> transactionIds = (from t in business.Books.SelectMany(delegate(Book book)
-			{
-				IEnumerable<Transaction> transactions2 = book.Transactions;
-				return transactions2 ?? Enumerable.Empty<Transaction>();
-			})
-			select t.Id).ToList();
+		List<Guid> transactionIds = businessTransactions.Select((Transaction t) => t.Id).ToList();
 		List<CustomFieldValue> customFieldValuesToDelete = await _context.CustomFieldValues.Where((CustomFieldValue cfVal) => transactionIds.Contains(cfVal.TransactionId)).ToListAsync();
+		if (moveToTrash)
+		{
+			TrashHelper.AddRows(related, "CustomFieldValues", customFieldValuesToDelete);
+		}
 		if (customFieldValuesToDelete.Any())
 		{
 			_context.CustomFieldValues.RemoveRange(customFieldValuesToDelete);
@@ -191,20 +227,10 @@ public class BusinessRepository : Repository<Business>, IBusinessRepository, IRe
 		{
 			_context.Attachements.RemoveRange(attachments);
 		}
-		List<Transaction> transactions = business.Books.SelectMany(delegate(Book book)
+		if (businessTransactions.Any())
 		{
-			IEnumerable<Transaction> transactions2 = book.Transactions;
-			return transactions2 ?? Enumerable.Empty<Transaction>();
-		}).ToList();
-		if (transactions.Any())
-		{
-			_context.Transactions.RemoveRange(transactions);
+			_context.Transactions.RemoveRange(businessTransactions);
 		}
-		List<CustomField> customFields = business.Books.SelectMany(delegate(Book book)
-		{
-			IEnumerable<CustomField> customFields2 = book.CustomFields;
-			return customFields2 ?? Enumerable.Empty<CustomField>();
-		}).ToList();
 		if (customFields.Any())
 		{
 			_context.CustomFields.RemoveRange(customFields);
@@ -228,6 +254,12 @@ public class BusinessRepository : Repository<Business>, IBusinessRepository, IRe
 		if (business.Contacts != null && business.Contacts.Any())
 		{
 			_context.Contacts.RemoveRange(business.Contacts);
+		}
+		if (moveToTrash)
+		{
+			TrashItem trashItem = TrashHelper.Build(business, deletedByUserId);
+			trashItem.RelatedJson = TrashHelper.Serialize(related);
+			_context.TrashItems.Add(trashItem);
 		}
 		_context.Businesses.Remove(business);
 		await _context.SaveChangesAsync();

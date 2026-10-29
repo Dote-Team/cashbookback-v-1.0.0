@@ -355,7 +355,7 @@ public class TransactionController : ControllerBase
 			{
 				return WalletDenied(access, "لا تملك صلاحية حذف حركة من هذه الخزنة.");
 			}
-			if (!(await _transactionRepository.DeleteTransactionAsync(id)))
+			if (!(await _transactionRepository.DeleteTransactionAsync(id, callerId.Value)))
 			{
 				_response.StatusCode = HttpStatusCode.InternalServerError;
 				_response.IsSuccess = false;

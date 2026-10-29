@@ -14,7 +14,7 @@ public interface IBusinessUserRepository : IRepository<BusinessUser>
 
 	Task<APIResponse> UpdateBusinessUserAsync(Guid businessUserId, UpdateBusinessUserDto dto);
 
-	Task<bool> DeleteBusinessUsersRange(Guid businessId, Guid userId);
+	Task<bool> DeleteBusinessUsersRange(Guid businessId, Guid userId, Guid? deletedByUserId = null);
 
 	Task<bool> RemoveBookFromBusinessUserAsync(Guid businessUserId, Guid bookId);
 

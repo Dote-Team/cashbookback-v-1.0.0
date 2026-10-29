@@ -209,7 +209,7 @@ public class BookController : ControllerBase
 				_response.ErrorMessages = new List<string> { "لا تملك صلاحية حذف هذه الخزنة." };
 				return Forbid();
 			}
-			await _bookRepository.DeleteBookAsync(id);
+			await _bookRepository.DeleteBookAsync(id, callerId.Value);
 			_response.StatusCode = HttpStatusCode.NoContent;
 			_response.IsSuccess = true;
 			return Ok(_response);

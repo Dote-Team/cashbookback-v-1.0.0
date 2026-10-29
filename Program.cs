@@ -163,6 +163,7 @@ internal class Program
         builder.Services.AddScoped<IExchangeRateRepository, ExchangeRateRepository>();
         builder.Services.AddScoped<IExchangeRateAuthorization, ExchangeRateAuthorization>();
         builder.Services.AddScoped<IBackupService, BackupService>();
+        builder.Services.AddScoped<ITrashRepository, TrashRepository>();
         builder.Services.Configure<AuditSettings>(builder.Configuration.GetSection("AuditSettings"));
         builder.Services.AddSingleton<AuditLogger>();
         builder.Services.AddSingleton((Func<IServiceProvider, IAuditLogger>)((IServiceProvider sp) => sp.GetRequiredService<AuditLogger>()));

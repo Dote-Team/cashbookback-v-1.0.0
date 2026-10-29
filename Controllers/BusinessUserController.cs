@@ -125,7 +125,7 @@ public class BusinessUserController : ControllerBase
 			{
 				return NotFound("BusinessUser not found.");
 			}
-			await _businessUserRepository.RemoveAsync(businessUser);
+			await _businessUserRepository.TrashAsync(businessUser, userId);
 			_response.StatusCode = HttpStatusCode.NoContent;
 			_response.IsSuccess = true;
 			return Ok(_response);
@@ -276,7 +276,7 @@ public class BusinessUserController : ControllerBase
 			{
 				return Forbid();
 			}
-			if (!(await _businessUserRepository.DeleteBusinessUsersRange(businessId, targetUserId)))
+			if (!(await _businessUserRepository.DeleteBusinessUsersRange(businessId, targetUserId, userId)))
 			{
 				_response.IsSuccess = false;
 				_response.StatusCode = HttpStatusCode.NotFound;

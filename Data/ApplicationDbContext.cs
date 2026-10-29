@@ -38,6 +38,8 @@ public class ApplicationDbContext : DbContext
 
 	public DbSet<AuditLog> AuditLogs { get; set; }
 
+	public DbSet<TrashItem> TrashItems { get; set; }
+
 	public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
 		: base(options)
 	{
@@ -152,5 +154,7 @@ public class ApplicationDbContext : DbContext
 			entity.HasIndex((AuditLog a) => a.CorrelationId).HasDatabaseName("IX_AuditLogs_Correlation");
 			entity.HasIndex((AuditLog a) => new { a.Action, a.OccurredAt }).HasDatabaseName("IX_AuditLogs_Action_Time");
 		});
+		modelBuilder.Entity<TrashItem>().Property((TrashItem t) => t.DataJson).HasColumnType("nvarchar(max)");
+		modelBuilder.Entity<TrashItem>().HasIndex((TrashItem t) => t.DeletedAt).HasDatabaseName("IX_TrashItems_DeletedAt");
 	}
 }

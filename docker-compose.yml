@@ -1,0 +1,100 @@
+# ============================================================================
+#  cashbook — حزمة تشغيل كاملة: واجهة برمجة + قاعدة بيانات SQL Server
+#
+#  التشغيل:
+#      1) أنشئ ملف .env بجانب هذا الملف (انسخه من .env.example واملأ الأسرار)
+#      2) docker compose build
+#      3) docker compose --profile tools run --rm migrate     # إنشاء الجداول
+#      4) docker compose up -d
+#
+#  كل الأسرار تُقرأ من .env — ولا سرّ واحد مكتوب في هذا الملف.
+# ============================================================================
+
+services:
+  # --------------------------------------------------------------------------
+  #  قاعدة البيانات (SQL Server 2022 على لينكس)
+  #  تحتاج ~2 غيغابايت ذاكرة. إن كان لديك قاعدة بيانات جاهزة على الخادم
+  #  (أو خادم SQL مُدار)، احذف هذه الخدمة وابدأ التشغيل بالأمر:
+  #      docker compose up -d --no-deps api
+  # --------------------------------------------------------------------------
+  db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: cashbook-db
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: "Express"
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?أضف MSSQL_SA_PASSWORD إلى ملف .env}
+      # نفس ترتيب الحروف المطلوب: البحث بـ CHARINDEX وفهرس Username الفريد
+      # يعتمدان على عدم التمييز بين الحروف الكبيرة والصغيرة (CI).
+      MSSQL_COLLATION: "SQL_Latin1_General_CP1_CI_AS"
+    ports:
+      # غير ضروري إطلاقاً في الإنتاج: علّق هذا السطر واترك الحاويتين
+      # تتخاطبان على الشبكة الداخلية وحدها. المنفذ الخارجي 14330 وليس 1433
+      # عمداً، لأن 1433 كثيراً ما يكون محجوزاً بخادم SQL آخر على نفس الجهاز.
+      - "${DB_PORT:-14330}:1433"
+    volumes:
+      - mssql-data:/var/opt/mssql
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - "( /opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -Q 'SELECT 1' -b -o /dev/null || /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -Q 'SELECT 1' -b -o /dev/null ) || exit 1"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  # --------------------------------------------------------------------------
+  #  واجهة البرمجة
+  # --------------------------------------------------------------------------
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cashbook-api:latest
+    container_name: cashbook-api
+    restart: unless-stopped
+    # كل مفتاح في .env يدخل الحاوية متغيّرَ بيئة — بأسماء Section__Key نفسها
+    # التي يستعملها التطبيق (ApiSettings__Secret، ConnectionStrings__DefaultConnection …)
+    env_file:
+      - .env
+    environment:
+      # بدّلها إلى Development مؤقتاً إن أردت إتاحة صفحة Swagger على الخادم
+      # (Swagger في هذا المشروع يعمل في بيئة التطوير فقط).
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
+    ports:
+      - "${API_PORT:-5003}:8080"
+    volumes:
+      # مرفقات المعاملات: خارج الحاوية حتى لا تُمسح عند كل إعادة بناء
+      - uploads:/app/wwwroot/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # --------------------------------------------------------------------------
+  #  أدوات: تطبيق ترحيالات EF Core — تعمل مرة واحدة ثم تتوقف.
+  #  ليست جزءاً من التشغيل العادي (profile = tools).
+  # --------------------------------------------------------------------------
+  migrate:
+    profiles: ["tools"]
+    build:
+      context: .
+      dockerfile: Dockerfile.migrate
+    image: cashbook-migrate:latest
+    container_name: cashbook-migrate
+    env_file:
+      - .env
+    environment:
+      # التطبيق يرفض الإقلاع بلا مفتاح توقيع، واكتشاف السياق في EF يُشغّل
+      # جزءاً من Program.cs قبل البناء. هذه قيمة صورية لا تُستعمل للتوقيع —
+      # الترحيالات لا تحتاج المفتاح الحقيقي.
+      ApiSettings__Secret: "migration-only-dummy-key-never-used-for-signing"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  mssql-data:
+    name: cashbook-mssql-data
+  uploads:
+    name: cashbook-uploads
