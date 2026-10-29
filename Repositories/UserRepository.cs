@@ -21,11 +21,14 @@ public class UserRepository : Repository<User>, IUserRepository, IRepository<Use
 
 	private readonly ITokenService _tokens;
 
-	public UserRepository(ApplicationDbContext context, ITokenService tokens)
+	private readonly IFileStorage _files;
+
+	public UserRepository(ApplicationDbContext context, ITokenService tokens, IFileStorage files)
 		: base(context)
 	{
 		_context = context;
 		_tokens = tokens;
+		_files = files;
 	}
 
 	// ملاحظة مهمّة: هذه الدوال لا تبتلع الاستثناءات عمداً.
@@ -83,7 +86,7 @@ public class UserRepository : Repository<User>, IUserRepository, IRepository<Use
 		}
 		if (userUpdateDto.ProfileImage != null && userUpdateDto.ProfileImage.Length > 0)
 		{
-			List<string> uploaded = await UploadFilesAsync(new List<IFormFile> { userUpdateDto.ProfileImage }, Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads"));
+			List<string> uploaded = await _files.SaveAsync(new List<IFormFile> { userUpdateDto.ProfileImage }, UploadKind.ProfileImage);
 			if (uploaded.Any())
 			{
 				existingUser.ProfileImage = uploaded.First();

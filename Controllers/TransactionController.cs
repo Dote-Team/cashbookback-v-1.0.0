@@ -32,8 +32,11 @@ public class TransactionController : ApiControllerBase
 
 	private readonly ApplicationDbContext _context;
 
-	public TransactionController(ITransactionRepository transactionRepository, IPermissionService permissions, ApplicationDbContext context)
+	private readonly IFileStorage _files;
+
+	public TransactionController(ITransactionRepository transactionRepository, IPermissionService permissions, ApplicationDbContext context, IFileStorage files)
 	{
+		_files = files;
 		_transactionRepository = transactionRepository;
 		_permissions = permissions;
 		_context = context;
@@ -111,6 +114,10 @@ public class TransactionController : ApiControllerBase
 			return Denied(access.Status, "لا تملك صلاحية إضافة قيد في هذه الخزنة.");
 		}
 		List<string> validationErrors = TransactionValidator.ValidateCreate(dto);
+		if (_files.Validate(dto.Files, UploadKind.Attachment) is { } fileError)
+		{
+			validationErrors.Add(fileError);
+		}
 		string? referenceError = await ValidateReferencesAsync(access.BusinessId, dto.CategoryId, dto.ContactId, dto.PaymentMethodId);
 		if (referenceError != null)
 		{
@@ -178,6 +185,10 @@ public class TransactionController : ApiControllerBase
 			return Denied(access.Status, "لا تملك صلاحية تعديل قيد في هذه الخزنة.");
 		}
 		List<string> validationErrors = TransactionValidator.ValidateUpdate(updateTransactionDto, existing, out ResolvedTransactionValues _);
+		if (_files.Validate(updateTransactionDto.Files, UploadKind.Attachment) is { } fileError)
+		{
+			validationErrors.Add(fileError);
+		}
 		// القيمة التي لم تتغير لا تُفحص: قيد قديم يبقى قابلاً للتعديل ولو أُرشف تصنيفه لاحقاً.
 		string? referenceError = await ValidateReferencesAsync(access.BusinessId,
 			updateTransactionDto.CategoryId == existing.CategoryId ? null : updateTransactionDto.CategoryId,

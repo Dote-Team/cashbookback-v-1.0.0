@@ -10,6 +10,9 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.RateLimiting;
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.EntityFrameworkCore;
@@ -35,9 +38,14 @@ using cashbook.Services.Fingerprint;
 using cashbook.Helper;
 using cashbook.Dto;
 
-[CompilerGenerated]
 internal class Program
 {
+    /// <summary>الحد العام لجسم الطلب: 5 مرفقات بحد 10MB لكل منها، مع هامش لبقية الحقول.</summary>
+    internal const long GeneralBodyLimit = 60L * 1024 * 1024;
+
+    /// <summary>حد مسارات النسخ الاحتياطي وحدها.</summary>
+    internal const long BackupBodyLimit = 200L * 1024 * 1024;
+
     private static async Task Main(string[] args)
     {
         // ترميز المخرجات: بدونه تظهر الرسائل العربية (ومنها رسالة المفتاح الناقص
@@ -73,7 +81,8 @@ internal class Program
         {
             throw new InvalidOperationException("مفتاح توقيع الرموز (ApiSettings:Secret) غير مضبوط أو أقصر من 32 حرفا\u064b.\nللتطوير : dotnet user-secrets set \"ApiSettings:Secret\" \"<قيمة عشوائية 32 حرفا\u064b على الأقل>\"\nعلى الخادم: أضف السطر  ApiSettings__Secret=<قيمة عشوائية 32 حرفا\u064b على الأقل>  إلى ملف .env\n            (ول\u0651د قيمة جديدة خاصة بالخادم، لا تستخدم مفتاح جهاز التطوير)");
         }
-        string[] allowedOrigins = builder.Configuration.GetSection("CorsSettings:AllowedOrigins").Get<string[]>();
+        // عناوين التطوير (localhost) في appsettings.Development.json وحده، لا في إعدادات الإنتاج.
+        string[] allowedOrigins = builder.Configuration.GetSection("CorsSettings:AllowedOrigins").Get<string[]>() ?? Array.Empty<string>();
         builder.Services.AddCors(delegate (CorsOptions options)
         {
             options.AddPolicy("AllowConfiguredOrigins", delegate (CorsPolicyBuilder policy)
@@ -134,16 +143,60 @@ internal class Program
         });
         builder.Services.AddAuthentication("Bearer").AddJwtBearer(delegate (JwtBearerOptions options)
         {
-            options.RequireHttpsMetadata = false;
+            options.RequireHttpsMetadata = !builder.Environment.IsDevelopment();
             options.SaveToken = true;
-            options.TokenValidationParameters = new TokenValidationParameters
+            options.TokenValidationParameters = TokenService.ValidationParameters(builder.Configuration);
+        });
+        // خلف Nginx أو Docker يصل كل طلب من عنوان الوكيل نفسه، فتصبح حماية محاولات الدخول
+        // مشتركة بين الجميع. هذا يقرأ عنوان العميل الحقيقي من X-Forwarded-For، لكن فقط
+        // حين يأتي الطلب من وكيل موثوق مدرج في ReverseProxy:KnownNetworks.
+        builder.Services.Configure(delegate (ForwardedHeadersOptions options)
+        {
+            options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+            options.ForwardLimit = 1;
+            foreach (string network in builder.Configuration.GetSection("ReverseProxy:KnownNetworks").Get<string[]>() ?? Array.Empty<string>())
             {
-                ValidateIssuerSigningKey = true,
-                IssuerSigningKey = new SymmetricSecurityKey(Encoding.ASCII.GetBytes(key)),
-                ValidateIssuer = false,
-                ValidateAudience = false,
-                ValidateLifetime = true,
-                ClockSkew = TimeSpan.Zero
+                string[] parts = network.Split('/');
+                if (parts.Length == 2 && System.Net.IPAddress.TryParse(parts[0], out System.Net.IPAddress prefix) && int.TryParse(parts[1], out int length))
+                {
+                    options.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(prefix, length));
+                }
+                else if (System.Net.IPAddress.TryParse(network, out System.Net.IPAddress proxy))
+                {
+                    options.KnownProxies.Add(proxy);
+                }
+            }
+        });
+        // تحديد معدل الطلبات على مسارات الدخول، لكل عنوان IP. الدخول بالبصمة دون اسم يطابق
+        // البصمة مع كل المستخدمين، فهو مكلف ويحتاج سقفاً.
+        builder.Services.AddRateLimiter(delegate (RateLimiterOptions options)
+        {
+            options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+            options.AddPolicy(RateLimitPolicies.Login, (HttpContext http) => RateLimitPartition.GetFixedWindowLimiter(
+                http.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = Math.Max(1, builder.Configuration.GetValue<int?>("RateLimiting:LoginPerMinute") ?? 10),
+                    Window = TimeSpan.FromMinutes(1),
+                    QueueLimit = 0
+                }));
+            options.AddPolicy(RateLimitPolicies.Refresh, (HttpContext http) => RateLimitPartition.GetFixedWindowLimiter(
+                http.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = Math.Max(1, builder.Configuration.GetValue<int?>("RateLimiting:RefreshPerMinute") ?? 30),
+                    Window = TimeSpan.FromMinutes(1),
+                    QueueLimit = 0
+                }));
+            options.OnRejected = async delegate (OnRejectedContext context, System.Threading.CancellationToken cancellationToken)
+            {
+                context.HttpContext.Response.ContentType = "application/json; charset=utf-8";
+                await context.HttpContext.Response.WriteAsync(JsonConvert.SerializeObject(new APIResponse
+                {
+                    StatusCode = (System.Net.HttpStatusCode)429,
+                    IsSuccess = false,
+                    ErrorMessages = new List<string> { "محاولات كثيرة. انتظر دقيقة ثم حاول مجدداً." }
+                }, new JsonSerializerSettings { ContractResolver = new CamelCasePropertyNamesContractResolver() }), cancellationToken);
             };
         });
         builder.Services.AddAutoMapper(AppDomain.CurrentDomain.GetAssemblies());
@@ -156,6 +209,7 @@ internal class Program
         builder.Services.AddScoped<IPermissionService, PermissionService>();
         builder.Services.AddScoped<IUserManagementService, UserManagementService>();
         builder.Services.AddScoped<ITokenService, TokenService>();
+        builder.Services.AddSingleton<IFileStorage, FileStorage>();
         builder.Services.Configure<FingerprintSettings>(builder.Configuration.GetSection("Fingerprint"));
         builder.Services.AddSingleton<IFingerprintMatcher>(delegate (IServiceProvider sp)
         {
@@ -188,13 +242,15 @@ internal class Program
         builder.Services.AddHostedService<AuditWriterService>();
         builder.Services.AddHostedService<AuditRetentionService>();
         builder.Services.AddSingleton<ILoginThrottle, LoginThrottle>();
+        // حد عام لجسم الطلب يكفي لعدة مرفقات. مسارات النسخ الاحتياطي وحدها ترفعه إلى 200MB
+        // عبر [RequestSizeLimit]، فلا يستطيع أي مسار آخر استهلاك ذاكرة الخادم بطلب ضخم.
         builder.Services.Configure(delegate (FormOptions options)
         {
-            options.MultipartBodyLengthLimit = 209715200L;
+            options.MultipartBodyLengthLimit = GeneralBodyLimit;
         });
         builder.Services.Configure(delegate (KestrelServerOptions options)
         {
-            options.Limits.MaxRequestBodySize = 209715200L;
+            options.Limits.MaxRequestBodySize = GeneralBodyLimit;
         });
         WebApplication app = builder.Build();
         // معالج أخطاء عام: أي استثناء لم يُلتقط يُسجَّل كاملاً، ويعود للعميل بالبنية المعتادة
@@ -208,33 +264,57 @@ internal class Program
                     .CreateLogger("UnhandledException")
                     .LogError(error, "خطأ غير معالج في {Path}", context.Request.Path);
                 bool blockedDelete = error is InvalidOperationException && error.Message.StartsWith("الحذف غير مسموح");
-                context.Response.StatusCode = blockedDelete ? StatusCodes.Status409Conflict : StatusCodes.Status500InternalServerError;
+                bool rejectedFile = error is FileValidationException;
+                bool tooLarge = error is Microsoft.AspNetCore.Http.BadHttpRequestException { StatusCode: StatusCodes.Status413PayloadTooLarge };
+                context.Response.StatusCode = blockedDelete ? StatusCodes.Status409Conflict
+                    : rejectedFile ? StatusCodes.Status400BadRequest
+                    : tooLarge ? StatusCodes.Status413PayloadTooLarge
+                    : StatusCodes.Status500InternalServerError;
+                string message = blockedDelete || rejectedFile ? error.Message
+                    : tooLarge ? "حجم الطلب أكبر من المسموح."
+                    : ApiErrorSanitizerFilter.GenericMessage;
                 context.Response.ContentType = "application/json; charset=utf-8";
                 await context.Response.WriteAsync(JsonConvert.SerializeObject(new APIResponse
                 {
                     StatusCode = (System.Net.HttpStatusCode)context.Response.StatusCode,
                     IsSuccess = false,
-                    ErrorMessages = new List<string> { blockedDelete ? error.Message : ApiErrorSanitizerFilter.GenericMessage }
+                    ErrorMessages = new List<string> { message }
                 }, new JsonSerializerSettings { ContractResolver = new CamelCasePropertyNamesContractResolver() }));
             });
         });
+        app.UseForwardedHeaders();
+        app.Use(async delegate (HttpContext context, Func<Task> next)
+        {
+            // المتصفح لا يخمّن نوع الملف، ولا تُعرض صفحات الـ API داخل إطار في موقع آخر.
+            context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+            context.Response.Headers["X-Frame-Options"] = "DENY";
+            context.Response.Headers["Referrer-Policy"] = "no-referrer";
+            await next();
+        });
         app.UseCors("AllowConfiguredOrigins");
-        string rootFolder = Path.Combine(app.Environment.ContentRootPath, "wwwroot", "uploads");
-        if (!Directory.Exists(rootFolder))
+        // المرفقات إيصالات مالية: لا تُعرض إلا بتوقيع مؤقت يصدره الخادم مع بيانات القيد
+        // (exp و sig في الرابط)، أو برمز دخول لمستخدم يملك عرض قيود خزنتها.
+        app.MapGet("/API/Files/{imageName}", async delegate (string imageName, long? exp, string? sig, HttpContext http, IFileStorage files, ApplicationDbContext db, IPermissionService permissions)
         {
-            Directory.CreateDirectory(rootFolder);
-        }
-        app.MapGet("/API/Files/{imageName}", (Func<string, IResult>)delegate (string imageName)
-        {
-            // اسم الملف وحده، بلا أي مسار: يمنع الخروج من مجلد الرفع.
-            string safeName = Path.GetFileName(imageName ?? string.Empty);
-            string contentRootPath = app.Environment.ContentRootPath;
-            string path = Path.Combine(contentRootPath, "wwwroot", "uploads", safeName);
-            if (string.IsNullOrEmpty(safeName) || !File.Exists(path))
+            string path = files.Resolve(imageName);
+            if (path == null)
             {
                 return Results.NotFound("Image not found.");
             }
-            string contentType = Path.GetExtension(safeName).ToLowerInvariant() switch
+            bool allowed = exp.HasValue && files.VerifySignature(imageName, exp.Value, sig);
+            if (!allowed && http.User.GetUserId() is Guid userId)
+            {
+                Guid? bookId = await db.Attachements.IgnoreQueryFilters().Where((Attachement a) => a.Files == imageName).Select((Attachement a) => (Guid?)a.Transaction.BookId).FirstOrDefaultAsync();
+                allowed = bookId.HasValue
+                    ? await permissions.HasAsync(userId, bookId.Value, Permissions.TransactionView)
+                    : await db.Users.AnyAsync((User u) => u.ProfileImage == imageName);
+            }
+            if (!allowed)
+            {
+                return Results.StatusCode(http.User.Identity?.IsAuthenticated == true ? StatusCodes.Status403Forbidden : StatusCodes.Status401Unauthorized);
+            }
+            http.Response.Headers.CacheControl = "private, max-age=3600";
+            string contentType = Path.GetExtension(path).ToLowerInvariant() switch
             {
                 ".jpg" or ".jpeg" => "image/jpeg",
                 ".png" => "image/png",
@@ -255,6 +335,7 @@ internal class Program
         app.UseMiddleware<AuditLogMiddleware>(Array.Empty<object>());
         app.UseMiddleware<SessionValidationMiddleware>(Array.Empty<object>());
         app.UseAuthorization();
+        app.UseRateLimiter();
         app.MapControllers();
         int inspectIndex = Array.IndexOf(args, "--inspect-backup");
         if (inspectIndex >= 0 && args.Length > inspectIndex + 2)

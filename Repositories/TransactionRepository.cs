@@ -19,6 +19,7 @@ using cashbook.Dto.user;
 using cashbook.Helper;
 using cashbook.Interfaces;
 using cashbook.Models;
+using cashbook.Services;
 using cashbook.Models.Constants;
 using cashbook.Models.Enums;
 using cashbook.Validators;
@@ -38,10 +39,13 @@ public class TransactionRepository : Repository<Transaction>, ITransactionReposi
 
     private readonly ApplicationDbContext _context;
 
-    public TransactionRepository(ApplicationDbContext context, IConfiguration configuration)
+    private readonly IFileStorage _files;
+
+    public TransactionRepository(ApplicationDbContext context, IFileStorage files)
         : base(context)
     {
         _context = context;
+        _files = files;
     }
 
     public async Task<bool> CreateTransactionAsync(CreateTransactionDto dto, Guid userId)
@@ -58,7 +62,7 @@ public class TransactionRepository : Repository<Transaction>, ITransactionReposi
         List<string> uploaded = new List<string>();
         if (dto.Files != null && dto.Files.Any())
         {
-            uploaded = await UploadFilesAsync(dto.Files, UploadsFolder);
+            uploaded = await _files.SaveAsync(dto.Files, UploadKind.Attachment);
         }
         try
         {
@@ -112,7 +116,7 @@ public class TransactionRepository : Repository<Transaction>, ITransactionReposi
         }
         catch (Exception ex)
         {
-            DeleteUploadedFiles(uploaded);
+            _files.Delete(uploaded);
             throw new InvalidOperationException("تعذّر حفظ الحركة. تحقق من البيانات وحاول مرة أخرى.", ex);
         }
     }
@@ -148,26 +152,6 @@ public class TransactionRepository : Repository<Transaction>, ITransactionReposi
         });
         await _context.SaveChangesAsync();
         return true;
-    }
-
-    private static string UploadsFolder => Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads");
-
-    private static void DeleteUploadedFiles(IEnumerable<string> fileNames)
-    {
-        foreach (string fileName in fileNames)
-        {
-            try
-            {
-                string path = Path.Combine(UploadsFolder, fileName);
-                if (File.Exists(path))
-                {
-                    File.Delete(path);
-                }
-            }
-            catch (IOException)
-            {
-            }
-        }
     }
 
     public async Task<PaginatedResponse<TransactionDto>> GetAllTransactionsByBookIdAsync(Guid bookId, int? skip = 1, int? take = 25, decimal? amount = null, string searchCategory = null, string searchContact = null, string searchPaymentMethod = null, string searchType = null, string searchUser = null, DateTime? startDate = null, DateTime? endDate = null, SortField? sortBy = null, SortDirection? sortDirection = SortDirection.asc)
@@ -429,7 +413,8 @@ public class TransactionRepository : Repository<Transaction>, ITransactionReposi
                     Attachments = t.Attachements?.Select((Attachement a) => new AttachmentDto
                     {
                         Id = a.Id,
-                        Files = a.Files,
+                        Files = _files.SignedName(a.Files),
+                        FileName = a.Files,
                         TransactionId = a.TransactionId
                     }).ToList()
                 });
@@ -626,7 +611,7 @@ public class TransactionRepository : Repository<Transaction>, ITransactionReposi
                     old.ArchivedByUserId = editorUserId;
                     old.ArchiveReason = "استُبدل بمرفق جديد عند تعديل القيد";
                 }
-                uploaded = await UploadFilesAsync(dto.Files, UploadsFolder);
+                uploaded = await _files.SaveAsync(dto.Files, UploadKind.Attachment);
                 foreach (string fileName in uploaded)
                 {
                     _context.Attachements.Add(new Attachement
@@ -660,7 +645,7 @@ public class TransactionRepository : Repository<Transaction>, ITransactionReposi
             }
             catch
             {
-                DeleteUploadedFiles(uploaded);
+                _files.Delete(uploaded);
                 throw;
             }
             return true;
@@ -708,17 +693,11 @@ public class TransactionRepository : Repository<Transaction>, ITransactionReposi
         List<string> copied = new List<string>();
         foreach (Attachement att in transaction.Attachements ?? new List<Attachement>())
         {
-            if (string.IsNullOrWhiteSpace(att.Files))
+            string? newFileName = string.IsNullOrWhiteSpace(att.Files) ? null : _files.Copy(att.Files);
+            if (newFileName == null)
             {
                 continue;
             }
-            string originalFilePath = Path.Combine(UploadsFolder, Path.GetFileName(att.Files));
-            if (!File.Exists(originalFilePath))
-            {
-                continue;
-            }
-            string newFileName = $"{Guid.NewGuid()}{Path.GetExtension(att.Files)}";
-            File.Copy(originalFilePath, Path.Combine(UploadsFolder, newFileName));
             copied.Add(newFileName);
             _context.Attachements.Add(new Attachement
             {
@@ -744,7 +723,7 @@ public class TransactionRepository : Repository<Transaction>, ITransactionReposi
         }
         catch
         {
-            DeleteUploadedFiles(copied);
+            _files.Delete(copied);
             throw;
         }
         return newTransaction.Id;

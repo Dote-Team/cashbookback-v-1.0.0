@@ -26,7 +26,6 @@ public interface IRepository<T> where T : class
 
 	Task<List<T>> GetPaginatedAsync(int? skip = null, int? take = null, Expression<Func<T, bool>>? filter = null);
 
-	Task<List<string>> UploadFilesAsync(IEnumerable<IFormFile> files, string uploadPath);
 
 	Task<string?> GetUserRoleAsync(Guid userId, Guid businessId);
 }

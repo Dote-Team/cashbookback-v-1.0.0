@@ -41,18 +41,26 @@ public sealed class TokenService : ITokenService
 
 	private readonly IExchangeRateAuthorization _exchangeRateAuthorization;
 
+	private readonly IFileStorage _files;
+
+	private readonly IConfiguration _configuration;
+
 	private readonly byte[] _key;
 
-	private readonly int _expireTokenHours;
+	private readonly TimeSpan _accessTokenLifetime;
 
 	private readonly int _refreshTokenDays;
 
-	public TokenService(ApplicationDbContext context, IConfiguration configuration, IExchangeRateAuthorization exchangeRateAuthorization)
+	public TokenService(ApplicationDbContext context, IConfiguration configuration, IExchangeRateAuthorization exchangeRateAuthorization, IFileStorage files)
 	{
 		_context = context;
 		_exchangeRateAuthorization = exchangeRateAuthorization;
-		_key = Encoding.ASCII.GetBytes(configuration.GetValue<string>("ApiSettings:Secret"));
-		_expireTokenHours = Math.Max(1, configuration.GetValue<int>("Jwt:ExpireHours"));
+		_files = files;
+		_configuration = configuration;
+		_key = SigningKey(configuration);
+		// ExpireMinutes هو الإعداد الجديد (60 افتراضياً). ExpireHours يبقى مقروءاً لملفات .env قديمة.
+		int? hours = configuration.GetValue<int?>("Jwt:ExpireHours");
+		_accessTokenLifetime = TimeSpan.FromMinutes(Math.Clamp(configuration.GetValue<int?>("Jwt:ExpireMinutes") ?? (hours.HasValue ? hours.Value * 60 : 60), 5, 24 * 60));
 		_refreshTokenDays = Math.Max(1, configuration.GetValue<int>("Jwt:RefreshExpireDays"));
 	}
 
@@ -77,15 +85,7 @@ public sealed class TokenService : ITokenService
 		ClaimsPrincipal principal;
 		try
 		{
-			principal = new JwtSecurityTokenHandler().ValidateToken(refreshToken, new TokenValidationParameters
-			{
-				ValidateIssuerSigningKey = true,
-				IssuerSigningKey = new SymmetricSecurityKey(_key),
-				ValidateIssuer = false,
-				ValidateAudience = false,
-				ValidateLifetime = true,
-				ClockSkew = TimeSpan.Zero
-			}, out SecurityToken validated);
+			principal = new JwtSecurityTokenHandler().ValidateToken(refreshToken, ValidationParameters(_configuration), out SecurityToken validated);
 			if (validated is not JwtSecurityToken jwt || !jwt.Header.Alg.Equals(SecurityAlgorithms.HmacSha256, StringComparison.OrdinalIgnoreCase))
 			{
 				return null;
@@ -138,11 +138,13 @@ public sealed class TokenService : ITokenService
 			return handler.WriteToken(handler.CreateToken(new SecurityTokenDescriptor
 			{
 				Subject = identity,
+				Issuer = Issuer(_configuration),
+				Audience = Audience(_configuration),
 				Expires = expires,
 				SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(_key), SecurityAlgorithms.HmacSha256)
 			}));
 		}
-		return (Create(AccessTokenType, DateTime.UtcNow.AddHours(_expireTokenHours)), Create(RefreshTokenType, DateTime.UtcNow.AddDays(_refreshTokenDays)));
+		return (Create(AccessTokenType, DateTime.UtcNow.Add(_accessTokenLifetime)), Create(RefreshTokenType, DateTime.UtcNow.AddDays(_refreshTokenDays)));
 	}
 
 	private async Task<LoginResponseDto> BuildResponseAsync(User user, Guid sessionId, string access, string refresh)
@@ -155,7 +157,7 @@ public sealed class TokenService : ITokenService
 			Email = user.Email,
 			Username = user.Username,
 			Name = user.Name,
-			ProfileImage = user.ProfileImage,
+			ProfileImage = _files.SignedName(user.ProfileImage),
 			AccessToken = access,
 			RefreshToken = refresh,
 			SessionId = sessionId,
@@ -166,6 +168,27 @@ public sealed class TokenService : ITokenService
 			ExchangeRateBusinessIds = exchangeRateBusinesses
 		};
 	}
+
+	public static string Issuer(IConfiguration configuration) => configuration.GetValue<string>("Jwt:Issuer") is { Length: > 0 } issuer ? issuer : "cashbook-api";
+
+	public static string Audience(IConfiguration configuration) => configuration.GetValue<string>("Jwt:Audience") is { Length: > 0 } audience ? audience : "cashbook-client";
+
+	/// <summary>المفتاح بترميز UTF-8: ASCII كان يحوّل أي حرف غير لاتيني في المفتاح إلى «?».</summary>
+	public static byte[] SigningKey(IConfiguration configuration) => Encoding.UTF8.GetBytes(configuration.GetValue<string>("ApiSettings:Secret") ?? "");
+
+	/// <summary>قواعد التحقق نفسها لرمز الدخول (في الوسيط) ولرمز التحديث (هنا).</summary>
+	public static TokenValidationParameters ValidationParameters(IConfiguration configuration) => new TokenValidationParameters
+	{
+		ValidateIssuerSigningKey = true,
+		IssuerSigningKey = new SymmetricSecurityKey(SigningKey(configuration)),
+		ValidateIssuer = true,
+		ValidIssuer = Issuer(configuration),
+		ValidateAudience = true,
+		ValidAudience = Audience(configuration),
+		ValidateLifetime = true,
+		ClockSkew = TimeSpan.Zero,
+		ValidAlgorithms = new[] { SecurityAlgorithms.HmacSha256 }
+	};
 
 	private static string Hash(string value) =>
 		Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));

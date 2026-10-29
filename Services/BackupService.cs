@@ -16,6 +16,7 @@ using cashbook.Interfaces;
 using cashbook.Models;
 using cashbook.Models.Constants;
 using cashbook.Models.Enums;
+using cashbook.Services;
 
 namespace cashbook.Services;
 
@@ -56,11 +57,14 @@ public class BackupService : IBackupService
 
 	private readonly int _pbkdf2Iterations;
 
-	private static string UploadRoot => Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads");
+	private readonly IFileStorage _files;
 
-	public BackupService(ApplicationDbContext context, IConfiguration configuration)
+	private string UploadRoot => _files.Root;
+
+	public BackupService(ApplicationDbContext context, IConfiguration configuration, IFileStorage files)
 	{
 		_context = context;
+		_files = files;
 		_pbkdf2Iterations = configuration.GetValue<int?>("Backup:Pbkdf2Iterations") ?? 200000;
 	}
 
@@ -158,8 +162,8 @@ public class BackupService : IBackupService
 					{
 						continue;
 					}
-					string fullPath = Path.Combine(UploadRoot, fileName);
-					if (!File.Exists(fullPath))
+					string? fullPath = _files.Resolve(fileName);
+					if (fullPath == null)
 					{
 						continue;
 					}
@@ -225,10 +229,10 @@ public class BackupService : IBackupService
 		}
 		result.TargetBookId = targetBook.Id;
 		result.TargetBookName = targetBook.Name;
-		Dictionary<string, Category> categories = await _context.Categories.Where((Category c) => c.BusinessId == businessId).ToDictionaryAsync((Category c) => c.Name.ToLower(), (Category c) => c);
-		Dictionary<string, PaymentMethod> paymentMethods = await _context.PaymentMethods.Where((PaymentMethod p) => p.BusinessId == businessId).ToDictionaryAsync((PaymentMethod p) => p.Name.ToLower(), (PaymentMethod p) => p);
-		Dictionary<string, Contact> contacts = await _context.Contacts.Where((Contact c) => c.BusinessId == businessId).ToDictionaryAsync((Contact c) => c.Name.ToLower(), (Contact c) => c);
-		Dictionary<string, CustomField> customFields = await _context.CustomFields.Where((CustomField cf) => cf.BookId == targetBook.Id).ToDictionaryAsync((CustomField cf) => cf.Key.ToLower(), (CustomField cf) => cf);
+		Dictionary<string, Category> categories = await _context.Categories.Where((Category c) => c.BusinessId == businessId && !c.IsArchived).ToDictionaryAsync((Category c) => c.Name.ToLower(), (Category c) => c);
+		Dictionary<string, PaymentMethod> paymentMethods = await _context.PaymentMethods.Where((PaymentMethod p) => p.BusinessId == businessId && !p.IsArchived).ToDictionaryAsync((PaymentMethod p) => p.Name.ToLower(), (PaymentMethod p) => p);
+		Dictionary<string, Contact> contacts = await _context.Contacts.Where((Contact c) => c.BusinessId == businessId && !c.IsArchived).ToDictionaryAsync((Contact c) => c.Name.ToLower(), (Contact c) => c);
+		Dictionary<string, CustomField> customFields = await _context.CustomFields.Where((CustomField cf) => cf.BookId == targetBook.Id && !cf.IsArchived).ToDictionaryAsync((CustomField cf) => cf.Key.ToLower(), (CustomField cf) => cf);
 		Directory.CreateDirectory(UploadRoot);
 		using IDbContextTransaction dbTransaction = await _context.Database.BeginTransactionAsync();
 		try
@@ -334,12 +338,13 @@ public class BackupService : IBackupService
 				}
 				foreach (string attachmentName in dto.Attachments ?? new List<string>())
 				{
-					ZipArchiveEntry entry = archive.GetEntry("attachments/" + attachmentName);
+					// اسم المرفق من داخل النسخة لا يُوثق به: امتداد مسموح فقط، فلا يصل ملف HTML أو SVG إلى مجلد الرفع.
+					ZipArchiveEntry entry = _files.IsAllowedExtension(attachmentName) ? archive.GetEntry("attachments/" + attachmentName) : null;
 					if (entry == null)
 					{
 						continue;
 					}
-					string newFileName = string.Concat(str1: Path.GetExtension(attachmentName), str0: Guid.NewGuid().ToString());
+					string newFileName = Guid.NewGuid().ToString() + Path.GetExtension(attachmentName).ToLowerInvariant();
 					string destination = Path.Combine(UploadRoot, newFileName);
 					using (Stream entryStream = entry.Open())
 					{

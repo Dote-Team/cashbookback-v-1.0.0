@@ -3,6 +3,7 @@ using System.Net;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using cashbook.Dto;
 using cashbook.Dto.fingerprint;
 using cashbook.Dto.user;
@@ -29,8 +30,11 @@ public class UserController : ApiControllerBase
 
 	private readonly ITokenService _tokens;
 
-	public UserController(IUserRepository userRepo, ILoginThrottle loginThrottle, IPermissionService permissions, IUserManagementService users, IFingerprintService fingerprints, ITokenService tokens)
+	private readonly IFileStorage _files;
+
+	public UserController(IUserRepository userRepo, ILoginThrottle loginThrottle, IPermissionService permissions, IUserManagementService users, IFingerprintService fingerprints, ITokenService tokens, IFileStorage files)
 	{
+		_files = files;
 		_userRepo = userRepo;
 		_loginThrottle = loginThrottle;
 		_permissions = permissions;
@@ -51,6 +55,7 @@ public class UserController : ApiControllerBase
 		Fail(HttpStatusCode.Gone, "إنشاء الحسابات من داخل النظام فقط. تواصل مع مسؤول النظام.");
 
 	[HttpPost("login")]
+	[EnableRateLimiting(RateLimitPolicies.Login)]
 	public async Task<ActionResult<APIResponse>> Login([FromBody] LoginRequestDto loginRequestDto)
 	{
 		if (loginRequestDto == null)
@@ -78,6 +83,7 @@ public class UserController : ApiControllerBase
 	/// المتكررة تُحسب حينها على عنوان IP.
 	/// </summary>
 	[HttpPost("login/fingerprint")]
+	[EnableRateLimiting(RateLimitPolicies.Login)]
 	public async Task<ActionResult<APIResponse>> LoginWithFingerprint([FromBody] FingerprintLoginDto dto)
 	{
 		if (dto == null || dto.Sample == null)
@@ -164,6 +170,10 @@ public class UserController : ApiControllerBase
 		{
 			return Fail(HttpStatusCode.BadRequest, passwordError);
 		}
+		if (userUpdateDto.ProfileImage != null && _files.Validate(new[] { userUpdateDto.ProfileImage }, UploadKind.ProfileImage) is { } fileError)
+		{
+			return Fail(HttpStatusCode.BadRequest, fileError);
+		}
 		if (!isSelf && !string.IsNullOrWhiteSpace(userUpdateDto.Username) && !await _permissions.IsSuperAdminAsync(callerId))
 		{
 			return Fail(HttpStatusCode.Forbidden, "تغيير اسم دخول مستخدم آخر للسوبر أدمن فقط.");
@@ -176,6 +186,7 @@ public class UserController : ApiControllerBase
 	}
 
 	[HttpPost("refresh-token")]
+	[EnableRateLimiting(RateLimitPolicies.Refresh)]
 	public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenRequestDto refreshTokenRequest)
 	{
 		if (refreshTokenRequest == null || string.IsNullOrEmpty(refreshTokenRequest.RefreshToken))

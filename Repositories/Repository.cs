@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -115,47 +115,5 @@ public class Repository<T> : IRepository<T> where T : class
 			query = query.Where(filter);
 		}
 		return await query.CountAsync();
-	}
-
-	public async Task<List<string>> UploadFilesAsync(IEnumerable<IFormFile> files, string uploadPath)
-	{
-		if (files == null || !files.Any())
-		{
-			throw new ArgumentException("No files provided for upload.");
-		}
-		List<string> fileNames = new List<string>();
-		try
-		{
-			foreach (IFormFile file in files)
-			{
-				if (file.Length > 0)
-				{
-					if (!Directory.Exists(uploadPath))
-					{
-						Directory.CreateDirectory(uploadPath);
-					}
-					string uniqueFileName = Guid.NewGuid().ToString() + Path.GetExtension(file.FileName);
-					string filePath = Path.Combine(uploadPath, uniqueFileName);
-					using (FileStream stream = new FileStream(filePath, FileMode.Create))
-					{
-						await file.CopyToAsync(stream);
-					}
-					fileNames.Add(uniqueFileName);
-				}
-			}
-			return fileNames;
-		}
-		catch (Exception innerException)
-		{
-			foreach (string fileName in fileNames)
-			{
-				string filePath2 = Path.Combine(uploadPath, fileName);
-				if (File.Exists(filePath2))
-				{
-					File.Delete(filePath2);
-				}
-			}
-			throw new InvalidOperationException("Error occurred while uploading files", innerException);
-		}
 	}
 }

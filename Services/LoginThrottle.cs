@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace cashbook.Services;
 
@@ -49,6 +51,14 @@ public class LoginThrottle : ILoginThrottle
 			return;
 		}
 		DateTime now = DateTime.UtcNow;
+		// الجدول في الذاكرة: من يجرّب آلاف الأسماء لا يملؤها بلا حد.
+		if (_attempts.Count > 10000)
+		{
+			foreach (KeyValuePair<string, Attempt> stale in _attempts.Where(a => now - a.Value.FirstFailureUtc > Window && a.Value.BlockedUntilUtc < now))
+			{
+				_attempts.TryRemove(stale.Key, out Attempt _);
+			}
+		}
 		_attempts.AddOrUpdate(key, (string _) => new Attempt
 		{
 			Count = 1,

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -114,15 +114,11 @@ public class BackupController : ControllerBase
 			InvalidOperationException ex2 = ex;
 			return FailRaw(HttpStatusCode.BadRequest, ex2.Message);
 		}
-		catch (Exception ex3)
-		{
-			Exception ex4 = ex3;
-			return FailRaw(HttpStatusCode.InternalServerError, ex4.Message);
-		}
 	}
 
 	[HttpPost("inspect")]
-	[RequestFormLimits(MultipartBodyLengthLimit = 209715200L)]
+	[RequestSizeLimit(Program.BackupBodyLimit)]
+	[RequestFormLimits(MultipartBodyLengthLimit = Program.BackupBodyLimit)]
 	[ProducesResponseType(200)]
 	[ProducesResponseType(400)]
 	[ProducesResponseType(401)]
@@ -155,15 +151,11 @@ public class BackupController : ControllerBase
 			InvalidOperationException ex2 = ex;
 			return Fail(HttpStatusCode.BadRequest, ex2.Message);
 		}
-		catch (Exception ex3)
-		{
-			Exception ex4 = ex3;
-			return Fail(HttpStatusCode.InternalServerError, ex4.Message);
-		}
 	}
 
 	[HttpPost("import")]
-	[RequestFormLimits(MultipartBodyLengthLimit = 209715200L)]
+	[RequestSizeLimit(Program.BackupBodyLimit)]
+	[RequestFormLimits(MultipartBodyLengthLimit = Program.BackupBodyLimit)]
 	[SwaggerOperation(null, null, Summary = "owner , partner")]
 	[ProducesResponseType(200)]
 	[ProducesResponseType(400)]
@@ -216,11 +208,6 @@ public class BackupController : ControllerBase
 		{
 			InvalidOperationException ex2 = ex;
 			return Fail(HttpStatusCode.BadRequest, ex2.Message);
-		}
-		catch (Exception ex3)
-		{
-			Exception ex4 = ex3;
-			return Fail(HttpStatusCode.InternalServerError, ex4.Message);
 		}
 	}
 }
