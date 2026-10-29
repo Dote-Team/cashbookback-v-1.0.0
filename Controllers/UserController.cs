@@ -1,388 +1,303 @@
 using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using Swashbuckle.AspNetCore.Annotations;
-using cashbook.Data;
+using Microsoft.AspNetCore.RateLimiting;
 using cashbook.Dto;
+using cashbook.Dto.fingerprint;
 using cashbook.Dto.user;
 using cashbook.Helper;
 using cashbook.Interfaces;
 using cashbook.Models;
 using cashbook.Services;
+using cashbook.Services.Fingerprint;
 
 namespace cashbook.Controllers;
 
+/// <summary>الدخول والخروج وتجديد الرمز، والملف الشخصي. ابدأ من هنا: POST /API/User/login يعطيك accessToken تضعه في زر Authorize.</summary>
 [Route("API/[Controller]")]
-[ApiController]
-public class UserController : ControllerBase
+public class UserController : ApiControllerBase
 {
 	private readonly IUserRepository _userRepo;
 
-	protected APIResponse _response;
-
-	private readonly ApplicationDbContext _context;
-
 	private readonly ILoginThrottle _loginThrottle;
 
-	public UserController(IUserRepository userRepo, ApplicationDbContext context, ILoginThrottle loginThrottle)
+	private readonly IPermissionService _permissions;
+
+	private readonly IUserManagementService _users;
+
+	private readonly IFingerprintService _fingerprints;
+
+	private readonly ITokenService _tokens;
+
+	private readonly IFileStorage _files;
+
+	public UserController(IUserRepository userRepo, ILoginThrottle loginThrottle, IPermissionService permissions, IUserManagementService users, IFingerprintService fingerprints, ITokenService tokens, IFileStorage files)
 	{
+		_files = files;
 		_userRepo = userRepo;
-		_response = new APIResponse();
-		_context = context;
 		_loginThrottle = loginThrottle;
+		_permissions = permissions;
+		_users = users;
+		_fingerprints = fingerprints;
+		_tokens = tokens;
 	}
 
 	private string ThrottleKey(string? username)
 	{
-		string text = base.HttpContext?.Connection?.RemoteIpAddress?.ToString() ?? "unknown";
-		return (username ?? string.Empty).Trim().ToLowerInvariant() + "|" + text;
+		string ip = HttpContext?.Connection?.RemoteIpAddress?.ToString() ?? "unknown";
+		return (username ?? string.Empty).Trim().ToLowerInvariant() + "|" + ip;
 	}
 
-	private Task<bool> IsMemberAsync(Guid userId, Guid businessId)
-	{
-		return _context.BusinessUsers.AnyAsync((BusinessUser bu) => bu.UserId == userId && bu.BusinessId == businessId);
-	}
-
+	/// <summary>متوقف: التسجيل الذاتي مغلق</summary>
+	/// <remarks>
+	/// الحسابات تُنشأ من داخل النظام فقط عبر POST /API/UserManagement. هذا المسار يعيد 410 دائماً.
+	/// </remarks>
+	/// <response code="410">المسار متوقف نهائياً.</response>
 	[HttpPost("register")]
-	[ProducesResponseType(409)]
-	[ProducesResponseType(201)]
-	[ProducesResponseType(400)]
-	[ProducesResponseType(500)]
-	public async Task<ActionResult<APIResponse>> Register([FromBody] RegisterationRequestDto registerationRequestDto)
-	{
-		try
-		{
-			if (registerationRequestDto == null)
-			{
-				return BadRequest(registerationRequestDto);
-			}
-			if (string.IsNullOrWhiteSpace(registerationRequestDto.Username))
-			{
-				_response.StatusCode = HttpStatusCode.BadRequest;
-				_response.IsSuccess = false;
-				_response.ErrorMessages.Add("Username is required.");
-				return BadRequest(_response);
-			}
-			if (!(await _userRepo.IsUsernameAvailableAsync(registerationRequestDto.Username)))
-			{
-				_response.StatusCode = HttpStatusCode.Conflict;
-				_response.IsSuccess = false;
-				_response.ErrorMessages.Add("Username already exists");
-				return Conflict(_response);
-			}
-			if (!string.IsNullOrWhiteSpace(registerationRequestDto.Email) && !(await _userRepo.IsUniqueUser(registerationRequestDto.Email.Trim())))
-			{
-				_response.StatusCode = HttpStatusCode.Conflict;
-				_response.IsSuccess = false;
-				_response.ErrorMessages.Add("Email already exists");
-				return Conflict(_response);
-			}
-			if (!PasswordPolicy.IsValid(registerationRequestDto.Password, out string passwordError))
-			{
-				_response.StatusCode = HttpStatusCode.BadRequest;
-				_response.IsSuccess = false;
-				_response.ErrorMessages.Add(passwordError);
-				return BadRequest(_response);
-			}
-			UserDto registeredUser = await _userRepo.Register(registerationRequestDto);
-			_response.Result = registeredUser;
-			_response.StatusCode = HttpStatusCode.Created;
-			return CreatedAtRoute("GetUserById", new
-			{
-				id = registeredUser.Id
-			}, _response);
-		}
-		catch (Exception ex)
-		{
-			Exception ex2 = ex;
-			_response.IsSuccess = false;
-			_response.ErrorMessages = new List<string> { ex2.ToString() };
-		}
-		return _response;
-	}
+	public ActionResult<APIResponse> Register() =>
+		Fail(HttpStatusCode.Gone, "إنشاء الحسابات من داخل النظام فقط. تواصل مع مسؤول النظام.");
 
+	/// <summary>تسجيل الدخول باسم المستخدم وكلمة المرور</summary>
+	/// <remarks>
+	/// **لا يحتاج دخولاً.**
+	///
+	/// أرسل username (أو email) و password. deviceToken اختياري لتمييز الجهاز في سجل التدقيق.
+	///
+	/// النتيجة فيها:
+	/// - accessToken: ضعه في زر Authorize أعلى الصفحة. صالح 60 دقيقة.
+	/// - refreshToken: لتجديد الرمز عبر refresh-token دون إعادة الدخول.
+	/// - level و levelName: 1 سوبر أدمن، 2 أدمن، 3 مستخدم.
+	///
+	/// الحماية: 5 محاولات خاطئة لنفس الاسم من نفس العنوان تقفل الدخول 15 دقيقة، و10 طلبات في الدقيقة لكل عنوان.
+	///
+	/// مثال:
+	///
+	///     { "username": "admin", "password": "..." }
+	/// </remarks>
+	/// <param name="loginRequestDto">اسم المستخدم أو البريد، وكلمة المرور.</param>
+	/// <response code="200">تم الدخول. الرموز في result.</response>
+	/// <response code="400">بيانات الطلب ناقصة أو غير صالحة. السبب في errorMessages.</response>
+	/// <response code="401">اسم المستخدم أو كلمة المرور غير صحيحة.</response>
+	/// <response code="429">محاولات كثيرة. انتظر ثم أعد المحاولة.</response>
 	[HttpPost("login")]
-	[ProducesResponseType(200)]
-	[ProducesResponseType(401)]
+	[EnableRateLimiting(RateLimitPolicies.Login)]
 	public async Task<ActionResult<APIResponse>> Login([FromBody] LoginRequestDto loginRequestDto)
 	{
-		try
+		if (loginRequestDto == null)
 		{
-			if (loginRequestDto == null)
-			{
-				return BadRequest(loginRequestDto);
-			}
-			string key = ThrottleKey(loginRequestDto.Username ?? loginRequestDto.Email);
-			if (_loginThrottle.IsBlocked(key, out var retryAfterSeconds))
-			{
-				base.Response.Headers["Retry-After"] = retryAfterSeconds.ToString();
-				_response.StatusCode = HttpStatusCode.TooManyRequests;
-				_response.IsSuccess = false;
-				_response.ErrorMessages = new List<string> { $"Too many failed attempts. Try again in {retryAfterSeconds} seconds." };
-				return StatusCode(429, _response);
-			}
-			LoginResponseDto loginResponseDto = await _userRepo.Login(loginRequestDto);
-			if (loginResponseDto == null)
-			{
-				_loginThrottle.RecordFailure(key);
-				return Unauthorized();
-			}
-			_loginThrottle.Reset(key);
-			_response.Result = loginResponseDto;
-			_response.StatusCode = HttpStatusCode.OK;
-			return Ok(_response);
+			return Fail(HttpStatusCode.BadRequest, "بيانات غير صالحة.");
 		}
-		catch (Exception ex)
+		string key = ThrottleKey(loginRequestDto.Username ?? loginRequestDto.Email);
+		if (IsThrottled(key) is { } blocked)
 		{
-			Exception ex2 = ex;
-			_response.IsSuccess = false;
-			_response.ErrorMessages = new List<string> { ex2.ToString() };
+			return blocked;
 		}
-		return _response;
+		LoginResponseDto? login = await _userRepo.Login(loginRequestDto);
+		if (login == null)
+		{
+			_loginThrottle.RecordFailure(key);
+			return Fail(HttpStatusCode.Unauthorized, "اسم المستخدم أو كلمة المرور غير صحيحة.");
+		}
+		_loginThrottle.Reset(key);
+		return Success(login);
 	}
 
+	/// <summary>تسجيل الدخول بالبصمة</summary>
+	/// <remarks>
+	/// **لا يحتاج دخولاً.**
+	///
+	/// الخطوات:
+	/// 1. التقط البصمة من البرنامج الوسيط: POST http://127.0.0.1:52181/capture
+	/// 2. أرسل نتيجته هنا كما هي في sample (width و height و dpi و pixels).
+	///
+	/// username اختياري:
+	/// - معه: تُطابق البصمة مع بصمات هذا المستخدم فقط.
+	/// - بدونه: يُبحث عن صاحب البصمة بين كل المستخدمين. إن تطابقت مع أكثر من مستخدم يُرفض الدخول.
+	///
+	/// النتيجة مثل login تماماً.
+	/// </remarks>
+	/// <param name="dto">صورة البصمة، واسم المستخدم اختيارياً.</param>
+	/// <response code="200">تم الدخول.</response>
+	/// <response code="400">صورة البصمة مفقودة أو غير صالحة.</response>
+	/// <response code="401">البصمة غير مطابقة.</response>
+	/// <response code="429">محاولات كثيرة.</response>
+	/// <response code="503">الدخول بالبصمة غير مفعّل في الخادم (راجع Fingerprint__EncryptionKey).</response>
+	[HttpPost("login/fingerprint")]
+	[EnableRateLimiting(RateLimitPolicies.Login)]
+	public async Task<ActionResult<APIResponse>> LoginWithFingerprint([FromBody] FingerprintLoginDto dto)
+	{
+		if (dto == null || dto.Sample == null)
+		{
+			return Fail(HttpStatusCode.BadRequest, "صورة البصمة مطلوبة.");
+		}
+		if (!_fingerprints.Status().Available)
+		{
+			return Fail(HttpStatusCode.ServiceUnavailable, _fingerprints.Status().Reason ?? "الدخول بالبصمة غير متاح.");
+		}
+		string key = ThrottleKey(dto.Username);
+		if (IsThrottled(key) is { } blocked)
+		{
+			return blocked;
+		}
+		User? user = await _fingerprints.VerifyAsync(dto.Username, dto.Sample);
+		if (user == null)
+		{
+			_loginThrottle.RecordFailure(key);
+			return Fail(HttpStatusCode.Unauthorized, "البصمة غير مطابقة.");
+		}
+		_loginThrottle.Reset(key);
+		return Success(await _tokens.IssueAsync(user, dto.DeviceToken, "fp"));
+	}
+
+	/// <summary>قائمة أعضاء منشأة</summary>
+	/// <remarks>
+	/// **الصلاحية:** عضو في المنشأة.
+	///
+	/// لإدارة المستخدمين وصلاحياتهم استخدم /API/UserManagement.
+	/// </remarks>
+	/// <param name="businessId">معرّف المنشأة.</param>
+	/// <param name="skip">رقم الصفحة، يبدأ من 1.</param>
+	/// <param name="take">عدد السجلات في الصفحة (حد أقصى 200).</param>
+	/// <param name="search">بحث في الاسم أو اسم المستخدم.</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
 	[Authorize]
 	[HttpGet]
-	[ProducesResponseType(200)]
-	[ProducesResponseType(404)]
-	[SwaggerOperation(null, null, Summary = "all")]
 	public async Task<ActionResult<APIResponse>> GetPaginatedUsers([FromQuery] Guid businessId, [FromQuery] int? skip = 1, [FromQuery] int? take = 25, [FromQuery] string? search = null)
 	{
-		try
+		if (CallerId is not Guid callerId)
 		{
-			Guid? callerId = base.User.GetUserId();
-			if (!callerId.HasValue)
-			{
-				_response.StatusCode = HttpStatusCode.Unauthorized;
-				_response.IsSuccess = false;
-				_response.ErrorMessages = new List<string> { "Invalid token." };
-				return Unauthorized(_response);
-			}
-			if (!(await IsMemberAsync(callerId.Value, businessId)))
-			{
-				_response.StatusCode = HttpStatusCode.Forbidden;
-				_response.IsSuccess = false;
-				_response.ErrorMessages = new List<string> { "You are not a member of this business." };
-				return StatusCode(403, _response);
-			}
-			PaginatedResponse<UserDto> paginatedUsers = await _userRepo.GetAllUsersAsync(businessId, skip, take, search);
-			_response.Result = paginatedUsers;
-			_response.StatusCode = HttpStatusCode.OK;
-			_response.IsSuccess = true;
-			return Ok(_response);
+			return NoCaller();
 		}
-		catch (UnauthorizedAccessException ex)
+		if (!await _permissions.IsBusinessMemberAsync(callerId, businessId))
 		{
-			UnauthorizedAccessException uaex = ex;
-			_response.IsSuccess = false;
-			_response.StatusCode = HttpStatusCode.Forbidden;
-			_response.ErrorMessages = new List<string> { uaex.Message };
-			return StatusCode(403, _response);
+			return Fail(HttpStatusCode.Forbidden, "لا تملك صلاحية على هذه المنشأة.");
 		}
-		catch (Exception ex2)
-		{
-			Exception ex3 = ex2;
-			_response.IsSuccess = false;
-			_response.ErrorMessages = new List<string> { ex3.Message };
-			return StatusCode(500, _response);
-		}
+		return Success(await _userRepo.GetAllUsersAsync(businessId, skip, take, search));
 	}
 
+	/// <summary>بيانات عضو في منشأة</summary>
+	/// <remarks>
+	/// **الصلاحية:** عضو في المنشأة نفسها.
+	/// </remarks>
+	/// <param name="id">معرّف المستخدم.</param>
+	/// <param name="businessId">المنشأة التي تُعرض عضويته فيها.</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
+	/// <response code="404">السجل غير موجود، أو مؤرشف.</response>
 	[Authorize]
 	[HttpGet("{id}", Name = "GetUserById")]
-	[ProducesResponseType(200)]
-	[ProducesResponseType(404)]
 	public async Task<ActionResult<APIResponse>> GetUserById(Guid id, Guid businessId)
 	{
-		try
+		if (CallerId is not Guid callerId)
 		{
-			Guid? callerId = base.User.GetUserId();
-			if (!callerId.HasValue)
-			{
-				_response.StatusCode = HttpStatusCode.Unauthorized;
-				_response.IsSuccess = false;
-				_response.ErrorMessages = new List<string> { "Invalid token." };
-				return Unauthorized(_response);
-			}
-			if (!(await IsMemberAsync(callerId.Value, businessId)))
-			{
-				_response.StatusCode = HttpStatusCode.Forbidden;
-				_response.IsSuccess = false;
-				_response.ErrorMessages = new List<string> { "You are not a member of this business." };
-				return StatusCode(403, _response);
-			}
-			UserDto user = await _userRepo.GetUserByIdAsync(id, businessId);
-			if (user == null)
-			{
-				return NotFound();
-			}
-			_response.Result = user;
-			_response.StatusCode = HttpStatusCode.OK;
-			return Ok(_response);
+			return NoCaller();
 		}
-		catch (Exception ex)
+		if (!await _permissions.IsBusinessMemberAsync(callerId, businessId))
 		{
-			Exception ex2 = ex;
-			_response.IsSuccess = false;
-			_response.ErrorMessages = new List<string> { ex2.ToString() };
+			return Fail(HttpStatusCode.Forbidden, "لا تملك صلاحية على هذه المنشأة.");
 		}
-		return _response;
+		UserDto? user = await _userRepo.GetUserByIdAsync(id, businessId);
+		return user == null ? Fail(HttpStatusCode.NotFound, "المستخدم غير موجود.") : Success(user);
 	}
 
+	/// <summary>تعطيل مستخدم (لا حذف)</summary>
+	/// <remarks>
+	/// **الصلاحية:** من أنشأه، أو السوبر أدمن.
+	///
+	/// يُعطَّل الحساب وتُنهى كل جلساته فوراً. تعطيل أدمن يعطّل معه كل المستخدمين الذين أنشأهم.
+	/// مثل POST /API/UserManagement/{id}/deactivate.
+	/// </remarks>
+	/// <param name="id">معرّف المستخدم.</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
+	/// <response code="404">السجل غير موجود، أو مؤرشف.</response>
 	[Authorize]
 	[HttpDelete("{id}")]
-	[ProducesResponseType(204)]
-	[ProducesResponseType(404)]
-	[SwaggerOperation(null, null, Summary = "owner , partner")]
-	public async Task<ActionResult<APIResponse>> DeleteUser(Guid id, Guid businessId)
+	public async Task<ActionResult<APIResponse>> DeleteUser(Guid id)
 	{
-		try
+		if (CallerId is not Guid callerId)
 		{
-			Guid? callerId = base.User.GetUserId();
-			if (!callerId.HasValue)
-			{
-				_response.StatusCode = HttpStatusCode.Unauthorized;
-				_response.IsSuccess = false;
-				_response.ErrorMessages = new List<string> { "Invalid token." };
-				return Unauthorized(_response);
-			}
-			string userRole = await _userRepo.GetUserRoleAsync(callerId.Value, businessId);
-			if (userRole == null || !Enumerable.Contains(Roles.Management, userRole.ToLowerInvariant()))
-			{
-				_response.StatusCode = HttpStatusCode.Forbidden;
-				_response.IsSuccess = false;
-				_response.ErrorMessages = new List<string> { "You do not have permission to delete user for this business." };
-				return StatusCode(403, _response);
-			}
-			List<BusinessUser> memberships = await _context.BusinessUsers.Where((BusinessUser bu) => bu.BusinessId == businessId && bu.UserId == id).ToListAsync();
-			if (memberships.Count == 0)
-			{
-				return NotFound();
-			}
-			if (memberships.Any((BusinessUser m) => string.Equals(m.Role, "owner", StringComparison.OrdinalIgnoreCase)) && !(await (from u in _context.Users
-				where u.Id == ((Guid?)callerId).Value
-				select u.IsSuperAdmin).FirstOrDefaultAsync()))
-			{
-				_response.StatusCode = HttpStatusCode.Forbidden;
-				_response.IsSuccess = false;
-				_response.ErrorMessages = new List<string> { "Only the super admin can remove the business owner." };
-				return StatusCode(403, _response);
-			}
-			_context.BusinessUsers.RemoveRange(memberships);
-			await _context.SaveChangesAsync();
-			_response.StatusCode = HttpStatusCode.NoContent;
-			_response.IsSuccess = true;
-			return Ok(_response);
+			return NoCaller();
 		}
-		catch (Exception ex)
-		{
-			Exception ex2 = ex;
-			_response.IsSuccess = false;
-			_response.ErrorMessages = new List<string> { ex2.ToString() };
-		}
-		return _response;
+		return FromResult(await _users.DeactivateAsync(callerId, id));
 	}
 
+	/// <summary>تعديل الملف الشخصي</summary>
+	/// <remarks>
+	/// **الصلاحية:** المستخدم نفسه، أو من أنشأه. تغيير اسم الدخول لشخص آخر للسوبر أدمن فقط.
+	///
+	/// يُرسل كـ multipart/form-data. أرسل الحقول التي تريد تغييرها فقط.
+	/// - ProfileImage: صورة JPG أو PNG أو GIF أو WEBP، حتى 10MB.
+	/// - Password: 8 أحرف على الأقل، فيها حرف ورقم.
+	/// </remarks>
+	/// <param name="id">معرّف المستخدم.</param>
+	/// <param name="userUpdateDto">الحقول المراد تغييرها.</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
+	/// <response code="400">بيانات الطلب ناقصة أو غير صالحة. السبب في errorMessages.</response>
+	/// <response code="409">اسم الدخول مستخدم مسبقاً.</response>
 	[Authorize]
 	[HttpPatch("{id}")]
-	[ProducesResponseType(204)]
-	[ProducesResponseType(400)]
 	public async Task<ActionResult<APIResponse>> UpdateUser([FromRoute] Guid id, [FromForm] UserUpdateDto userUpdateDto)
 	{
-		try
+		if (CallerId is not Guid callerId)
 		{
-			Guid? callerId = base.User.GetUserId();
-			if (!callerId.HasValue)
-			{
-				_response.StatusCode = HttpStatusCode.Unauthorized;
-				_response.IsSuccess = false;
-				_response.ErrorMessages = new List<string> { "Invalid token." };
-				return Unauthorized(_response);
-			}
-			User existingUser = await _userRepo.GetAsync((User u) => u.Id == id);
-			if (existingUser == null)
-			{
-				return NotFound();
-			}
-			if (id != existingUser.Id)
-			{
-				return BadRequest();
-			}
-			bool isSelf = callerId.Value == id;
-			if (!isSelf)
-			{
-				bool isSuperAdmin = await (from u in _context.Users
-					where u.Id == ((Guid?)callerId).Value
-					select u.IsSuperAdmin).FirstOrDefaultAsync();
-				bool isManagerOfSharedBusiness = false;
-				if (!isSuperAdmin)
-				{
-					List<Guid> managedBusinesses = await (from bu in _context.BusinessUsers
-						where bu.UserId == ((Guid?)callerId).Value && (bu.Role.ToLower() == "owner" || bu.Role.ToLower() == "partner")
-						select bu.BusinessId).ToListAsync();
-					bool flag = managedBusinesses.Count > 0;
-					bool flag2 = flag;
-					if (flag2)
-					{
-						flag2 = await _context.BusinessUsers.AnyAsync((BusinessUser bu) => bu.UserId == id && managedBusinesses.Contains(bu.BusinessId));
-					}
-					isManagerOfSharedBusiness = flag2;
-				}
-				if (!isSuperAdmin && !isManagerOfSharedBusiness)
-				{
-					_response.StatusCode = HttpStatusCode.Forbidden;
-					_response.IsSuccess = false;
-					_response.ErrorMessages = new List<string> { "You do not have permission to update this user." };
-					return StatusCode(403, _response);
-				}
-			}
-			if (!string.IsNullOrWhiteSpace(userUpdateDto.Password) && !PasswordPolicy.IsValid(userUpdateDto.Password, out string passwordError))
-			{
-				_response.StatusCode = HttpStatusCode.BadRequest;
-				_response.IsSuccess = false;
-				_response.ErrorMessages = new List<string> { passwordError };
-				return BadRequest(_response);
-			}
-			if (!isSelf && !string.IsNullOrWhiteSpace(userUpdateDto.Username) && !(await (from u in _context.Users
-				where u.Id == ((Guid?)callerId).Value
-				select u.IsSuperAdmin).FirstOrDefaultAsync()))
-			{
-				_response.StatusCode = HttpStatusCode.Forbidden;
-				_response.IsSuccess = false;
-				_response.ErrorMessages = new List<string> { "Only the super admin can change another user's username." };
-				return StatusCode(403, _response);
-			}
-			if (!(await _userRepo.UpdateUserAsync(id, userUpdateDto)))
-			{
-				return NotFound();
-			}
-			_response.StatusCode = HttpStatusCode.NoContent;
-			_response.IsSuccess = true;
-			return Ok(_response);
+			return NoCaller();
 		}
-		catch (Exception ex)
+		bool isSelf = callerId == id;
+		if (!isSelf && !await _users.CanManageAsync(callerId, id))
 		{
-			Exception ex2 = ex;
-			_response.IsSuccess = false;
-			_response.ErrorMessages = new List<string> { ex2.ToString() };
-			return StatusCode(500, _response);
+			return Fail(HttpStatusCode.Forbidden, "لا تملك صلاحية تعديل هذا المستخدم.");
 		}
+		if (!string.IsNullOrWhiteSpace(userUpdateDto.Password) && !PasswordPolicy.IsValid(userUpdateDto.Password, out string passwordError))
+		{
+			return Fail(HttpStatusCode.BadRequest, passwordError);
+		}
+		if (userUpdateDto.ProfileImage != null && _files.Validate(new[] { userUpdateDto.ProfileImage }, UploadKind.ProfileImage) is { } fileError)
+		{
+			return Fail(HttpStatusCode.BadRequest, fileError);
+		}
+		if (!isSelf && !string.IsNullOrWhiteSpace(userUpdateDto.Username) && !await _permissions.IsSuperAdminAsync(callerId))
+		{
+			return Fail(HttpStatusCode.Forbidden, "تغيير اسم دخول مستخدم آخر للسوبر أدمن فقط.");
+		}
+		if (!await _userRepo.UpdateUserAsync(id, userUpdateDto))
+		{
+			return Fail(HttpStatusCode.Conflict, "المستخدم غير موجود أو اسم الدخول مستخدم مسبقاً.");
+		}
+		return Success();
 	}
 
+	/// <summary>تجديد رمز الدخول</summary>
+	/// <remarks>
+	/// **لا يحتاج دخولاً.**
+	///
+	/// أرسل refreshToken الذي حصلت عليه عند الدخول، فتحصل على accessToken و refreshToken جديدين.
+	/// رمز التحديث القديم يبطل فور استخدامه، فاحفظ الجديد دائماً. صالح 20 يوماً.
+	///
+	/// **ملاحظة:** هذا المسار يعيد الرموز مباشرة، لا داخل result.
+	/// </remarks>
+	/// <param name="refreshTokenRequest">رمز التحديث.</param>
+	/// <response code="200">رموز جديدة.</response>
+	/// <response code="400">رمز التحديث مفقود.</response>
+	/// <response code="401">رمز التحديث غير صالح أو منتهٍ أو مستخدم مسبقاً.</response>
+	/// <response code="429">طلبات كثيرة.</response>
 	[HttpPost("refresh-token")]
-	[ProducesResponseType(204)]
+	[EnableRateLimiting(RateLimitPolicies.Refresh)]
 	public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenRequestDto refreshTokenRequest)
 	{
 		if (refreshTokenRequest == null || string.IsNullOrEmpty(refreshTokenRequest.RefreshToken))
 		{
 			return BadRequest("Invalid client request");
 		}
-		LoginResponseDto response = await _userRepo.RefreshTokenAsync(refreshTokenRequest.RefreshToken);
+		LoginResponseDto? response = await _userRepo.RefreshTokenAsync(refreshTokenRequest.RefreshToken);
 		if (response == null)
 		{
 			return Unauthorized("Invalid or expired refresh token");
@@ -390,37 +305,30 @@ public class UserController : ControllerBase
 		return Ok(response);
 	}
 
+	/// <summary>تسجيل الخروج</summary>
+	/// <remarks>
+	/// يُنهي الجلسة الحالية: رمز الدخول ورمز التحديث يبطلان فوراً.
+	/// </remarks>
+	/// <response code="200">تم الخروج.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
 	[HttpPost("logout")]
 	[Authorize]
-	[ProducesResponseType(200)]
-	[ProducesResponseType(401)]
-	[ProducesResponseType(500)]
 	public async Task<ActionResult<APIResponse>> Logout()
 	{
-		try
+		if (!await _userRepo.LogoutAsync(User))
 		{
-			if (!(await _userRepo.LogoutAsync(base.User)))
-			{
-				_response.IsSuccess = false;
-				_response.StatusCode = HttpStatusCode.Unauthorized;
-				_response.ErrorMessages = new List<string> { "Invalid or expired session." };
-				return Unauthorized(_response);
-			}
-			_response.IsSuccess = true;
-			_response.StatusCode = HttpStatusCode.OK;
-			_response.Result = new
-			{
-				message = "Logged out successfully."
-			};
-			return Ok(_response);
+			return Fail(HttpStatusCode.Unauthorized, "الجلسة غير صالحة أو منتهية.");
 		}
-		catch (Exception ex)
+		return Success(new { message = "Logged out successfully." });
+	}
+
+	private ActionResult<APIResponse>? IsThrottled(string key)
+	{
+		if (!_loginThrottle.IsBlocked(key, out int retryAfterSeconds))
 		{
-			Exception ex2 = ex;
-			_response.IsSuccess = false;
-			_response.StatusCode = HttpStatusCode.InternalServerError;
-			_response.ErrorMessages = new List<string> { ex2.Message };
-			return StatusCode(500, _response);
+			return null;
 		}
+		Response.Headers["Retry-After"] = retryAfterSeconds.ToString();
+		return Fail(HttpStatusCode.TooManyRequests, $"محاولات كثيرة فاشلة. حاول بعد {retryAfterSeconds} ثانية.");
 	}
 }

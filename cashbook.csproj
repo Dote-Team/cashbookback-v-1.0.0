@@ -4,19 +4,19 @@
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <NoWarn>$(NoWarn);CS0105;CS8618;CS8603;CS8604;CS8601;CS8602;CS8600;CS8073;CS1998;CS0168;CS0219</NoWarn>
+    <NoWarn>$(NoWarn);CS1591;CS1573</NoWarn>
     <!--
       الأسرار تُقرأ من مخزن المستخدم المحلي (تطوير) أو من ملف .env (خادم)،
       ولا تُكتب داخل appsettings.json أبداً.
       إدارة السر:  dotnet user-secrets set "ApiSettings:Secret" "<قيمة>"
     -->
     <UserSecretsId>cashbook-api-secrets</UserSecretsId>
+    <!-- تعليقات XML فوق المسارات تظهر شرحاً في Swagger. CS1591: لا يُلزَم كل صنف بتعليق. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="AutoMapper" Version="14.0.0" />
     <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
-    <PackageReference Include="MailKit" Version="4.12.1" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.16" />
     <PackageReference Include="Microsoft.AspNetCore.JsonPatch" Version="9.0.5" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.NewtonsoftJson" Version="8.0.16" />
@@ -26,12 +26,22 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
+    <PackageReference Include="SourceAFIS" Version="3.14.0" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="8.1.1" />
     <PackageReference Include="Swashbuckle.AspNetCore.Annotations" Version="8.1.4" />
   </ItemGroup>
 
   <ItemGroup>
     <Folder Include="wwwroot\" />
+  </ItemGroup>
+
+  <!-- البرنامج الوسيط للبصمة مشروع مستقل يعمل على جهاز المستخدم، لا جزء من الـ API. -->
+  <ItemGroup>
+    <Compile Remove="tools/**" />
+    <None Remove="tests/**" />
+    <Content Remove="tests/**" />
+    <Content Remove="tools/**" />
+    <None Remove="tools/**" />
   </ItemGroup>
 
   <!--

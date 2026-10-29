@@ -2,5 +2,6 @@ namespace cashbook.Dto.business;
 
 public class CreateBusinessDto
 {
-	public string Name { get; set; }
+	/// <summary>اسم المنشأة.</summary>
+	public string Name { get; set; } = string.Empty;
 }

@@ -25,7 +25,7 @@ public class SessionValidationMiddleware
         _next = next;
     }
 
-    public async Task InvokeAsync(HttpContext context, ApplicationDbContext dbContext)
+    public async Task InvokeAsync(HttpContext context, ApplicationDbContext dbContext, ISessionCache sessionCache)
     {
         if (context.User.Identity?.IsAuthenticated == true)
         {
@@ -39,9 +39,29 @@ public class SessionValidationMiddleware
                 return;
             }
 
-            var session = await dbContext.Sessions.FirstOrDefaultAsync(s => s.Id == sessionId && s.UserId == userId);
+            // رمز التحديث لا يصلح للدخول إلى الـ API، ولو كان موقّعاً وصالح المدة.
+            if (context.User.FindFirst(TokenService.TokenTypeClaim)?.Value != TokenService.AccessTokenType)
+            {
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                await context.Response.WriteAsync("Invalid token type.");
+                return;
+            }
 
-            if (session == null || (session.ExpiredAt != null && session.ExpiredAt < DateTime.UtcNow))
+            // من الذاكرة إن قُرئت الجلسة قبل لحظات، وإلا من قاعدة البيانات. انظر SessionCache.
+            CachedSession? session = sessionCache.Get(sessionId, userId);
+            if (session == null)
+            {
+                session = await dbContext.Sessions
+                    .Where(s => s.Id == sessionId && s.UserId == userId)
+                    .Select(s => new CachedSession(s.Id, s.UserId, s.ExpiredAt, s.DeviceToken, s.User.IsActive))
+                    .FirstOrDefaultAsync();
+                if (session != null)
+                {
+                    sessionCache.Set(session);
+                }
+            }
+
+            if (session == null || session.ExpiredAt < DateTime.UtcNow || !session.UserActive)
             {
                 context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                 await context.Response.WriteAsync("Session expired or not found.");
@@ -57,7 +77,7 @@ public class SessionValidationMiddleware
             if (AuditScope.Current is { } audit)
             {
                 audit.DeviceToken = session.DeviceToken;
-                audit.SessionId = session.Id;
+                audit.SessionId = session.SessionId;
             }
         }
 

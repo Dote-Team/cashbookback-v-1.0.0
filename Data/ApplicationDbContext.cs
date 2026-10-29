@@ -38,6 +38,12 @@ public class ApplicationDbContext : DbContext
 
 	public DbSet<AuditLog> AuditLogs { get; set; }
 
+	public DbSet<TrashItem> TrashItems { get; set; }
+
+	public DbSet<UserWalletPermission> UserWalletPermissions { get; set; }
+
+	public DbSet<UserFingerprint> UserFingerprints { get; set; }
+
 	public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
 		: base(options)
 	{
@@ -152,5 +158,40 @@ public class ApplicationDbContext : DbContext
 			entity.HasIndex((AuditLog a) => a.CorrelationId).HasDatabaseName("IX_AuditLogs_Correlation");
 			entity.HasIndex((AuditLog a) => new { a.Action, a.OccurredAt }).HasDatabaseName("IX_AuditLogs_Action_Time");
 		});
+		modelBuilder.Entity<TrashItem>().Property((TrashItem t) => t.DataJson).HasColumnType("nvarchar(max)");
+		modelBuilder.Entity<TrashItem>().HasIndex((TrashItem t) => t.DeletedAt).HasDatabaseName("IX_TrashItems_DeletedAt");
+
+		modelBuilder.Entity<User>().HasIndex((User u) => u.ParentUserId);
+		modelBuilder.Entity<UserWalletPermission>(delegate(EntityTypeBuilder<UserWalletPermission> entity)
+		{
+			entity.HasOne((UserWalletPermission p) => p.User).WithMany((User u) => u.WalletPermissions)
+				.HasForeignKey((UserWalletPermission p) => p.UserId)
+				.OnDelete(DeleteBehavior.Restrict);
+			entity.HasOne((UserWalletPermission p) => p.Book).WithMany()
+				.HasForeignKey((UserWalletPermission p) => p.BookId)
+				.OnDelete(DeleteBehavior.Restrict);
+			entity.HasIndex((UserWalletPermission p) => new { p.UserId, p.BookId, p.Permission }).IsUnique();
+			entity.HasIndex((UserWalletPermission p) => p.BookId);
+		});
+		modelBuilder.Entity<UserFingerprint>(delegate(EntityTypeBuilder<UserFingerprint> entity)
+		{
+			entity.HasOne((UserFingerprint f) => f.User).WithMany()
+				.HasForeignKey((UserFingerprint f) => f.UserId)
+				.OnDelete(DeleteBehavior.Restrict);
+			entity.HasIndex((UserFingerprint f) => new { f.UserId, f.IsActive });
+		});
+
+		// المؤرشف يختفي من كل الاستعلامات تلقائياً، ومنها الأرصدة. شاشة الأرشيف وحدها
+		// تتجاوز الفلتر بـ IgnoreQueryFilters. التصنيفات وجهات الاتصال وطرق الدفع والحقول
+		// المخصصة لا فلتر عاماً لها عمداً: القيود القديمة يجب أن تبقى تعرض أسماءها بعد أرشفتها.
+		modelBuilder.Entity<Business>().HasQueryFilter((Business b) => !b.IsArchived);
+		modelBuilder.Entity<Book>().HasQueryFilter((Book b) => !b.IsArchived);
+		modelBuilder.Entity<Transaction>().HasQueryFilter((Transaction t) => !t.IsArchived);
+		modelBuilder.Entity<Attachement>().HasQueryFilter((Attachement a) => !a.IsArchived);
+
+		// فهرس مغطٍّ لحساب الرصيد التراكمي دون الرجوع إلى صفوف الجدول نفسها.
+		modelBuilder.Entity<Transaction>().HasIndex((Transaction t) => new { t.BookId, t.IsArchived, t.Date })
+			.IncludeProperties((Transaction t) => new { t.Amount, t.Currency, t.Type })
+			.HasDatabaseName("IX_Transactions_Book_Running");
 	}
 }

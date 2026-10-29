@@ -38,7 +38,7 @@ public class ExchangeRateRepository : Repository<ExchangeRate>, IExchangeRateRep
 	public async Task<ExchangeRate> UpsertAsync(Guid bookId, CurrencyCode currency, DateTime rateDate, decimal rate, Guid userId)
 	{
 		DateTime date = rateDate.Date;
-		ExchangeRate existing = await _context.ExchangeRates.FirstOrDefaultAsync((ExchangeRate er) => er.BookId == bookId && (int)er.Currency == (int)currency && er.RateDate == date);
+		ExchangeRate? existing = await _context.ExchangeRates.FirstOrDefaultAsync((ExchangeRate er) => er.BookId == bookId && (int)er.Currency == (int)currency && er.RateDate == date);
 		if (existing == null)
 		{
 			existing = new ExchangeRate

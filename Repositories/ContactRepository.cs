@@ -22,11 +22,11 @@ public class ContactRepository : Repository<Contact>, IContactRepository, IRepos
 		_context = context;
 	}
 
-	public async Task<PaginatedResponse<ContactDto>> GetContactsAsync(Guid businessId, int? skip = 1, int? take = 25, string search = null)
+	public async Task<PaginatedResponse<ContactDto>> GetContactsAsync(Guid businessId, int? skip = 1, int? take = 25, string? search = null)
 	{
 		int currentPage = skip ?? 1;
 		int currentPageSize = take ?? 25;
-		IQueryable<Contact> query = _context.Contacts.Where((Contact b) => b.BusinessId == businessId);
+		IQueryable<Contact> query = _context.Contacts.Where((Contact b) => b.BusinessId == businessId && !b.IsArchived);
 		if (!string.IsNullOrWhiteSpace(search))
 		{
 			query = query.Where((Contact b) => b.Name.Contains(search));

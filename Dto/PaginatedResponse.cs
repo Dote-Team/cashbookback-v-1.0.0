@@ -10,5 +10,5 @@ public class PaginatedResponse<T>
 
 	public int Take { get; set; }
 
-	public IEnumerable<T> Data { get; set; }
+	public IEnumerable<T> Data { get; set; } = new List<T>();
 }

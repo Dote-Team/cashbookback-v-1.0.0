@@ -27,6 +27,7 @@ INSERT INTO @BizIds (Id) VALUES
 
 DECLARE @UserIds TABLE (Id uniqueidentifier PRIMARY KEY);
 INSERT INTO @UserIds (Id) VALUES
+  ('C0000000-0000-4000-8000-000000000000'),  -- المالك aaaa إن أنشأه سكربت الإدخال
   ('C0000000-0000-4000-8000-000000000001'),
   ('C0000000-0000-4000-8000-000000000002'),
   ('C0000000-0000-4000-8000-000000000003'),
@@ -88,6 +89,8 @@ BEGIN TRY
 
     -- 9) العضويات
     DELETE FROM BusinessUsers WHERE BusinessId IN (SELECT Id FROM @BizIds);
+    DELETE FROM UserWalletPermissions WHERE BookId IN (SELECT Id FROM @Books) OR UserId IN (SELECT Id FROM @UserIds);
+    DELETE FROM UserFingerprints WHERE UserId IN (SELECT Id FROM @UserIds);
 
     -- 10) الخزائن ثم المنشآت
     DELETE FROM Books      WHERE BusinessId IN (SELECT Id FROM @BizIds);

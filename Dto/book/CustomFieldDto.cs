@@ -6,7 +6,7 @@ public class CustomFieldDto
 {
 	public Guid Id { get; set; }
 
-	public string Key { get; set; }
+	public string Key { get; set; } = string.Empty;
 
 	public Guid BookId { get; set; }
 

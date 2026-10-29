@@ -7,7 +7,7 @@ public class ExchangeRateStatusDto
 {
 	public Guid BookId { get; set; }
 
-	public string BookName { get; set; }
+	public string BookName { get; set; } = string.Empty;
 
 	public CurrencyCode Currency { get; set; }
 

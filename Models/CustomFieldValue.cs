@@ -12,17 +12,17 @@ public class CustomFieldValue
 	public Guid Id { get; set; }
 
 	[Required]
-	public string Value { get; set; }
+	public string Value { get; set; } = string.Empty;
 
 	[Required]
 	[ForeignKey("Transaction")]
 	public Guid TransactionId { get; set; }
 
-	public Transaction Transaction { get; set; }
+	public Transaction Transaction { get; set; } = null!;
 
 	[Required]
 	[ForeignKey("CustomField")]
 	public Guid CustomFieldId { get; set; }
 
-	public CustomField CustomField { get; set; }
+	public CustomField CustomField { get; set; } = null!;
 }

@@ -17,10 +17,12 @@ using cashbook.Dto.audit;
 using cashbook.Helper;
 using cashbook.Interfaces;
 using cashbook.Models;
+using cashbook.Services;
 using cashbook.Models.Constants;
 
 namespace cashbook.Controllers;
 
+/// <summary>سجل التدقيق: كل عملية في النظام، من نفّذها ومتى ومن أي جهاز. للسوبر أدمن كاملاً، وللأدمن على خزائنه.</summary>
 [Route("API/[Controller]")]
 [ApiController]
 [Authorize]
@@ -40,14 +42,17 @@ public class AuditLogController : ControllerBase
 
 	private readonly ApplicationDbContext _context;
 
+	private readonly IPermissionService _permissions;
+
 	private readonly IAuditLogger _auditLogger;
 
 	private readonly AuditSettings _settings;
 
 	private readonly ILogger<AuditLogController> _logger;
 
-	public AuditLogController(IAuditLogRepository auditRepository, ApplicationDbContext context, IAuditLogger auditLogger, IOptions<AuditSettings> settings, ILogger<AuditLogController> logger)
+	public AuditLogController(IAuditLogRepository auditRepository, ApplicationDbContext context, IAuditLogger auditLogger, IOptions<AuditSettings> settings, ILogger<AuditLogController> logger, IPermissionService permissions)
 	{
+		_permissions = permissions;
 		_auditRepository = auditRepository;
 		_context = context;
 		_auditLogger = auditLogger;
@@ -55,11 +60,20 @@ public class AuditLogController : ControllerBase
 		_logger = logger;
 	}
 
+	/// <summary>بحث في سجل التدقيق</summary>
+	/// <remarks>
+	/// **الصلاحية:** السوبر أدمن يرى كل السجل. الأدمن يرى سجل الخزائن التي يدير مستخدميها (users.manage) ويجب أن يرسل businessId.
+	///
+	/// الأوقات بتوقيت UTC. الافتراضي آخر 30 يوماً، والحد الأقصى سنة. طلبات القراءة لا تُسجَّل افتراضياً.
+	/// </remarks>
+	/// <param name="request">معايير البحث، كلها اختيارية.</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
 	[HttpGet]
 	[ProducesResponseType(200)]
 	[ProducesResponseType(401)]
 	[ProducesResponseType(403)]
-	[SwaggerOperation(null, null, Summary = "بحث م\u064fصف\u0651ى في سجل التدقيق", Description = "المدير الرئيسي يرى كل السجل، وصاحب أو شريك المنشأة يرى سجل منشأته فقط. الأوقات بتوقيت UTC. المدى الزمني الافتراضي آخر 30 يوما\u064b وحد\u0651ه الأقصى سنة.")]
 	public async Task<ActionResult<APIResponse>> Search([FromQuery] AuditLogRequest request)
 	{
 		AccessResult access = await ResolveAccessAsync(request.BusinessId);
@@ -82,11 +96,20 @@ public class AuditLogController : ControllerBase
 		}
 	}
 
+	/// <summary>تفاصيل سطر واحد</summary>
+	/// <remarks>
+	/// يشمل جسم الطلب (بعد إخفاء كلمات المرور) والحقول قبل التغيير وبعده.
+	/// </remarks>
+	/// <param name="id">رقم السطر.</param>
+	/// <param name="businessId">منشأتك (إلزامي لغير السوبر أدمن).</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
+	/// <response code="404">السجل غير موجود، أو مؤرشف.</response>
 	[HttpGet("{id:long}")]
 	[ProducesResponseType(200)]
 	[ProducesResponseType(404)]
 	[ProducesResponseType(403)]
-	[SwaggerOperation(null, null, Summary = "تفاصيل سطر واحد — يشمل جسم الطلب وفروق الحقول قبل/بعد")]
 	public async Task<ActionResult<APIResponse>> GetById(long id, [FromQuery] Guid? businessId = null)
 	{
 		AccessResult access = await ResolveAccessAsync(businessId);
@@ -96,7 +119,7 @@ public class AuditLogController : ControllerBase
 		}
 		try
 		{
-			AuditLogDetailDto row = await _auditRepository.GetByIdAsync(id, ToScopeQuery(access));
+			AuditLogDetailDto? row = await _auditRepository.GetByIdAsync(id, ToScopeQuery(access));
 			if (row == null)
 			{
 				return NotFoundError("لا يوجد سطر بهذا الرقم، أو أنه خارج نطاق صلاحيتك.");
@@ -112,10 +135,18 @@ public class AuditLogController : ControllerBase
 		}
 	}
 
+	/// <summary>كل ما فعله طلب واحد</summary>
+	/// <remarks>
+	/// سطر الطلب مع كل تغييرات البيانات التي نتجت عنه، مرتبة زمنياً.
+	/// </remarks>
+	/// <param name="correlationId">معرّف الطلب (من سطر في نتائج البحث).</param>
+	/// <param name="businessId">منشأتك (إلزامي لغير السوبر أدمن).</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
 	[HttpGet("trace/{correlationId:guid}")]
 	[ProducesResponseType(200)]
 	[ProducesResponseType(403)]
-	[SwaggerOperation(null, null, Summary = "القصة الكاملة لنداء واحد", Description = "ي\u064fرجع سطر النداء مع كل تغييرات البيانات التي أنتجها، مرت\u0651بة زمنيا\u064b. هذه أدق\u0651 طريقة لمعرفة ما فعله طلب واحد بالضبط.")]
 	public async Task<ActionResult<APIResponse>> GetTrace(Guid correlationId, [FromQuery] Guid? businessId = null)
 	{
 		AccessResult access = await ResolveAccessAsync(businessId);
@@ -142,10 +173,17 @@ public class AuditLogController : ControllerBase
 		}
 	}
 
+	/// <summary>ملخص الفترة</summary>
+	/// <remarks>
+	/// إجماليات وتوزيعات حسب النوع والمستخدم، وسلسلة يومية، لاكتشاف أي نشاط غير طبيعي.
+	/// </remarks>
+	/// <param name="request">معايير البحث نفسها.</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
 	[HttpGet("stats")]
 	[ProducesResponseType(200)]
 	[ProducesResponseType(403)]
-	[SwaggerOperation(null, null, Summary = "ملخ\u0651ص تحليلي للفترة", Description = "إجماليات وتوزيعات وسلسلة زمنية — يجيب على «هل يجري شيء غير طبيعي؟» بلا قراءة السطور.")]
 	public async Task<ActionResult<APIResponse>> GetStats([FromQuery] AuditLogRequest request)
 	{
 		AccessResult access = await ResolveAccessAsync(request.BusinessId);
@@ -168,10 +206,17 @@ public class AuditLogController : ControllerBase
 		}
 	}
 
+	/// <summary>تصدير النتائج إلى CSV</summary>
+	/// <remarks>
+	/// حتى 20000 سطر بمعايير البحث نفسها. الملف UTF-8 فيفتحه Excel بالعربية بشكل صحيح.
+	/// </remarks>
+	/// <param name="request">معايير البحث نفسها.</param>
+	/// <response code="200">ملف CSV.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
 	[HttpGet("export")]
 	[ProducesResponseType(200)]
 	[ProducesResponseType(403)]
-	[SwaggerOperation(null, null, Summary = "تصدير النتائج الم\u064fصف\u0651اة إلى ملف CSV", Description = "ي\u064fصد\u064e\u0651ر حتى 20000 سطر بنفس معايير البحث. الملف بترميز UTF-8 مع علامة الترتيب حتى يفتح Excel النص\u0651 العربي صحيحا\u064b.")]
 	public async Task<IActionResult> Export([FromQuery] AuditLogRequest request)
 	{
 		AccessResult access = await ResolveAccessAsync(request.BusinessId);
@@ -192,9 +237,14 @@ public class AuditLogController : ControllerBase
 		}
 	}
 
+	/// <summary>قوائم الفلترة</summary>
+	/// <remarks>
+	/// التصنيفات والأهميات والعمليات والكيانات مع أسمائها العربية، لبناء قوائم الفلترة في الواجهة.
+	/// </remarks>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
 	[HttpGet("vocabulary")]
 	[ProducesResponseType(200)]
-	[SwaggerOperation(null, null, Summary = "قواميس السجل للواجهة", Description = "التصنيفات والأهميات والعمليات والكيانات مع تسمياتها العربية — لت\u064fبنى قوائم الفلترة في الواجهة من مصدر واحد لا من نصوص مكتوبة يدويا\u064b.")]
 	public ActionResult<APIResponse> GetVocabulary()
 	{
 		string[] source = new string[3] { "Info", "Warning", "Critical" };
@@ -246,10 +296,18 @@ public class AuditLogController : ControllerBase
 		return Ok(_response);
 	}
 
+	/// <summary>حالة نظام التدقيق</summary>
+	/// <remarks>
+	/// **الصلاحية:** السوبر أدمن فقط.
+	///
+	/// هل التسجيل يعمل؟ هل الطابور ممتلئ وتضيع سطور؟ كم عمر أقدم سطر؟
+	/// </remarks>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
 	[HttpGet("status")]
 	[ProducesResponseType(200)]
 	[ProducesResponseType(403)]
-	[SwaggerOperation(null, null, Summary = "حالة نظام التدقيق (مدير رئيسي فقط)", Description = "هل التسجيل يعمل؟ هل الطابور ممتلئ وت\u064fسق\u064eط سطور؟ كم عمر أقدم سطر؟ هذه الأسئلة يجب أن يكون لها جواب قبل أن ي\u064fكتشف النقص وقت الحاجة إليه.")]
 	public async Task<ActionResult<APIResponse>> GetStatus()
 	{
 		AccessResult access = await ResolveAccessAsync(null);
@@ -294,9 +352,7 @@ public class AuditLogController : ControllerBase
 		{
 			return new AccessResult(Allowed: false, Unrestricted: false, null, null, "هوية المستخدم غير صالحة في التوكن.");
 		}
-		if (await (from u in _context.Users.AsNoTracking()
-			where u.Id == ((Guid?)userId).Value
-			select u.IsSuperAdmin).FirstOrDefaultAsync())
+		if (await _permissions.IsSuperAdminAsync(userId.Value))
 		{
 			return new AccessResult(Allowed: true, Unrestricted: true, requestedBusinessId, null, null);
 		}
@@ -304,16 +360,13 @@ public class AuditLogController : ControllerBase
 		{
 			return new AccessResult(Allowed: false, Unrestricted: false, null, null, "يجب تحديد businessId — سجل التدقيق مقصور على منشأتك.");
 		}
-		string role = await (from bu in _context.BusinessUsers.AsNoTracking()
-			where bu.UserId == ((Guid?)userId).Value && bu.BusinessId == ((Guid?)requestedBusinessId).Value
-			select bu.Role.ToLower()).FirstOrDefaultAsync();
-		if (role == null || !Enumerable.Contains(Roles.Management, role))
+		// الأدمن يطّلع على سجل الخزائن التي يدير مستخدميها فقط.
+		List<Guid> managedBooks = await _permissions.GetBookIdsAsync(userId.Value, requestedBusinessId.Value, Permissions.UsersManage);
+		if (managedBooks.Count == 0)
 		{
-			return new AccessResult(Allowed: false, Unrestricted: false, null, null, "الاطلاع على سجل التدقيق متاح لصاحب المنشأة أو شريكها فقط.");
+			return new AccessResult(Allowed: false, Unrestricted: false, null, null, "الاطلاع على سجل التدقيق متاح للسوبر أدمن وللأدمن على خزائنه فقط.");
 		}
-		return new AccessResult(BookIds: await (from b in _context.Books.AsNoTracking()
-			where b.BusinessId == ((Guid?)requestedBusinessId).Value
-			select b.Id).ToListAsync(), Allowed: true, Unrestricted: false, BusinessId: requestedBusinessId, Error: null);
+		return new AccessResult(BookIds: managedBooks, Allowed: true, Unrestricted: false, BusinessId: requestedBusinessId, Error: null);
 	}
 
 	private static AuditLogQuery ToScopeQuery(AccessResult access)
@@ -377,7 +430,7 @@ public class AuditLogController : ControllerBase
 	{
 		return from field in typeof(AuditAction).GetFields(BindingFlags.Static | BindingFlags.Public)
 			where field.IsLiteral && field.FieldType == typeof(string)
-			select (string)field.GetRawConstantValue() into value
+			select (string)field.GetRawConstantValue()! into value
 			orderby value
 			select value;
 	}
@@ -407,11 +460,11 @@ public class AuditLogController : ControllerBase
 		return text;
 	}
 
-	private ActionResult AccessDenied(string message)
+	private ActionResult AccessDenied(string? message)
 	{
 		_response.StatusCode = HttpStatusCode.Forbidden;
 		_response.IsSuccess = false;
-		_response.ErrorMessages = new List<string> { message };
+		_response.ErrorMessages = new List<string> { message ?? "لا تملك صلاحية الوصول إلى سجل التدقيق." };
 		return StatusCode(403, _response);
 	}
 
@@ -419,7 +472,7 @@ public class AuditLogController : ControllerBase
 	{
 		_response.StatusCode = HttpStatusCode.NotFound;
 		_response.IsSuccess = false;
-		_response.ErrorMessages = new List<string> { message };
+		_response.ErrorMessages = new List<string> { message ?? "لا تملك صلاحية الوصول إلى سجل التدقيق." };
 		return NotFound(_response);
 	}
 

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -14,10 +14,12 @@ using cashbook.Dto;
 using cashbook.Dto.backup;
 using cashbook.Helper;
 using cashbook.Interfaces;
+using cashbook.Services;
 using cashbook.Models;
 
 namespace cashbook.Controllers;
 
+/// <summary>النسخ الاحتياطي لخزنة كاملة في ملف .cbk مشفّر بكلمة مرور، واستيراده إلى خزنة جديدة أو موجودة.</summary>
 [Route("API/[Controller]")]
 [ApiController]
 [Authorize]
@@ -31,8 +33,11 @@ public class BackupController : ControllerBase
 
 	private readonly ApplicationDbContext _context;
 
-	public BackupController(IBackupService backupService, ApplicationDbContext context)
+	private readonly IPermissionService _permissions;
+
+	public BackupController(IBackupService backupService, ApplicationDbContext context, IPermissionService permissions)
 	{
+		_permissions = permissions;
 		_backupService = backupService;
 		_context = context;
 		_response = new APIResponse();
@@ -59,14 +64,6 @@ public class BackupController : ControllerBase
 		return StatusCode((int)status, _response);
 	}
 
-	private async Task<bool> IsManagementAsync(Guid userId, Guid businessId)
-	{
-		string role = await (from bu in _context.BusinessUsers
-			where bu.UserId == userId && bu.BusinessId == businessId
-			select bu.Role.ToLower()).FirstOrDefaultAsync();
-		return role != null && Enumerable.Contains(Roles.Management, role);
-	}
-
 	private static string BuildFileName(string bookName)
 	{
 		string value = new string((bookName ?? "book").Where((char c) => !Enumerable.Contains(Path.GetInvalidFileNameChars(), c)).ToArray()).Trim();
@@ -77,8 +74,20 @@ public class BackupController : ControllerBase
 		return $"backup-{value}-{DateTime.Now:yyyyMMdd-HHmmss}.cbk";
 	}
 
+	/// <summary>تصدير نسخة احتياطية لخزنة</summary>
+	/// <remarks>
+	/// **الصلاحية:** transaction.export على الخزنة.
+	///
+	/// يعيد ملف .cbk (وليس JSON) فيه كل القيود وحقولها ومرفقاتها، مشفّراً بكلمة المرور المرسلة (6 أحرف على الأقل).
+	/// **احفظ كلمة المرور:** لا يمكن فتح الملف بدونها.
+	/// </remarks>
+	/// <param name="request">الخزنة وكلمة مرور التشفير.</param>
+	/// <response code="200">ملف النسخة (application/octet-stream).</response>
+	/// <response code="400">بيانات الطلب ناقصة أو غير صالحة. السبب في errorMessages.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
+	/// <response code="404">الخزنة غير موجودة.</response>
 	[HttpPost("export")]
-	[SwaggerOperation(null, null, Summary = "owner , partner")]
 	[ProducesResponseType(200)]
 	[ProducesResponseType(400)]
 	[ProducesResponseType(401)]
@@ -107,26 +116,29 @@ public class BackupController : ControllerBase
 			{
 				return FailRaw(HttpStatusCode.NotFound, "الخزنة غير موجودة.");
 			}
-			if (!(await IsManagementAsync(userId, book.BusinessId)))
+			if (!await _permissions.HasAsync(userId, book.Id, Permissions.TransactionExport))
 			{
 				return FailRaw(HttpStatusCode.Forbidden, "لا تملك صلاحية تصدير هذه الخزنة.");
 			}
 			return File(await _backupService.ExportBookAsync(book.Id, request.Password, userId), "application/octet-stream", BuildFileName(book.Name));
 		}
-		catch (InvalidOperationException ex)
+		catch (InvalidOperationException ex2)
 		{
-			InvalidOperationException ex2 = ex;
 			return FailRaw(HttpStatusCode.BadRequest, ex2.Message);
-		}
-		catch (Exception ex3)
-		{
-			Exception ex4 = ex3;
-			return FailRaw(HttpStatusCode.InternalServerError, ex4.Message);
 		}
 	}
 
+	/// <summary>معاينة نسخة احتياطية قبل استيرادها</summary>
+	/// <remarks>
+	/// multipart/form-data: الملف وكلمة مروره. يعيد اسم الخزنة الأصلية وعدد القيود والمرفقات، دون إدخال أي شيء. حد الملف 200MB.
+	/// </remarks>
+	/// <param name="request">الملف وكلمة المرور.</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="400">كلمة المرور خاطئة أو الملف تالف.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
 	[HttpPost("inspect")]
-	[RequestFormLimits(MultipartBodyLengthLimit = 209715200L)]
+	[RequestSizeLimit(Program.BackupBodyLimit)]
+	[RequestFormLimits(MultipartBodyLengthLimit = Program.BackupBodyLimit)]
 	[ProducesResponseType(200)]
 	[ProducesResponseType(400)]
 	[ProducesResponseType(401)]
@@ -138,7 +150,7 @@ public class BackupController : ControllerBase
 			{
 				return Fail(HttpStatusCode.Unauthorized, "Invalid user ID.");
 			}
-			IFormFile file = request?.File;
+			IFormFile? file = request?.File;
 			if (file == null || file.Length == 0)
 			{
 				return Fail(HttpStatusCode.BadRequest, "لم يتم إرسال ملف النسخة الاحتياطية.");
@@ -154,21 +166,29 @@ public class BackupController : ControllerBase
 			_response.Result = manifest;
 			return Ok(_response);
 		}
-		catch (InvalidOperationException ex)
+		catch (InvalidOperationException ex2)
 		{
-			InvalidOperationException ex2 = ex;
 			return Fail(HttpStatusCode.BadRequest, ex2.Message);
-		}
-		catch (Exception ex3)
-		{
-			Exception ex4 = ex3;
-			return Fail(HttpStatusCode.InternalServerError, ex4.Message);
 		}
 	}
 
+	/// <summary>استيراد نسخة احتياطية</summary>
+	/// <remarks>
+	/// **الصلاحية:**
+	/// - إلى خزنة موجودة (targetBookId): backup.import عليها.
+	/// - إلى خزنة جديدة (newBookName): السوبر أدمن فقط.
+	///
+	/// multipart/form-data. التصنيفات وجهات الاتصال وطرق الدفع تُربط بالموجودة بالاسم أو تُنشأ. كل قيد مستورد يُسجَّل بعملية IMPORT. حد الملف 200MB.
+	/// </remarks>
+	/// <param name="request">الملف وكلمة المرور والمنشأة، والخزنة الهدف أو اسم خزنة جديدة.</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
+	/// <response code="400">كلمة المرور خاطئة أو الملف تالف أو البيانات ناقصة.</response>
+	/// <response code="404">الخزنة الهدف غير موجودة.</response>
 	[HttpPost("import")]
-	[RequestFormLimits(MultipartBodyLengthLimit = 209715200L)]
-	[SwaggerOperation(null, null, Summary = "owner , partner")]
+	[RequestSizeLimit(Program.BackupBodyLimit)]
+	[RequestFormLimits(MultipartBodyLengthLimit = Program.BackupBodyLimit)]
 	[ProducesResponseType(200)]
 	[ProducesResponseType(400)]
 	[ProducesResponseType(401)]
@@ -181,7 +201,7 @@ public class BackupController : ControllerBase
 			{
 				return Fail(HttpStatusCode.Unauthorized, "Invalid user ID.");
 			}
-			IFormFile file = request?.File;
+			IFormFile? file = request?.File;
 			Guid businessId = request?.BusinessId ?? Guid.Empty;
 			if (businessId == Guid.Empty)
 			{
@@ -195,9 +215,19 @@ public class BackupController : ControllerBase
 			{
 				return Fail(HttpStatusCode.BadRequest, "حجم الملف يتجاوز الحد المسموح.");
 			}
-			if (!(await IsManagementAsync(userId, businessId)))
+			// الاستيراد إلى خزنة قائمة يحتاج صلاحية الاستيراد عليها، وإلى خزنة جديدة يعني إنشاء خزنة:
+			// والإنشاء للسوبر أدمن وحده.
+			if (request?.TargetBookId is Guid targetBookId && targetBookId != Guid.Empty)
 			{
-				return Fail(HttpStatusCode.Forbidden, "لا تملك صلاحية الاستيراد في هذه المنشأة.");
+				if (!await _permissions.HasAsync(userId, targetBookId, Permissions.BackupImport)
+					|| !await _context.Books.AnyAsync(b => b.Id == targetBookId && b.BusinessId == businessId))
+				{
+					return Fail(HttpStatusCode.Forbidden, "لا تملك صلاحية الاستيراد إلى هذه الخزنة.");
+				}
+			}
+			else if (!await _permissions.IsSuperAdminAsync(userId))
+			{
+				return Fail(HttpStatusCode.Forbidden, "الاستيراد إلى خزنة جديدة للسوبر أدمن فقط، اختر خزنة قائمة.");
 			}
 			using Stream stream = file.OpenReadStream();
 			BackupImportResultDto result = await _backupService.ImportAsync(stream, request?.Password ?? string.Empty, businessId, request?.TargetBookId, request?.NewBookName, userId);
@@ -206,15 +236,9 @@ public class BackupController : ControllerBase
 			_response.Result = result;
 			return Ok(_response);
 		}
-		catch (InvalidOperationException ex)
+		catch (InvalidOperationException ex2)
 		{
-			InvalidOperationException ex2 = ex;
 			return Fail(HttpStatusCode.BadRequest, ex2.Message);
-		}
-		catch (Exception ex3)
-		{
-			Exception ex4 = ex3;
-			return Fail(HttpStatusCode.InternalServerError, ex4.Message);
 		}
 	}
 }

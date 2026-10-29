@@ -22,11 +22,11 @@ public class CategoryRepository : Repository<Category>, ICategoryRepository, IRe
 		_context = context;
 	}
 
-	public async Task<PaginatedResponse<CategoryDto>> GetCategoriesAsync(Guid businessId, int? skip = 1, int? take = 25, string search = null)
+	public async Task<PaginatedResponse<CategoryDto>> GetCategoriesAsync(Guid businessId, int? skip = 1, int? take = 25, string? search = null)
 	{
 		int currentPage = skip ?? 1;
 		int currentPageSize = take ?? 25;
-		IQueryable<Category> query = _context.Categories.Where((Category b) => b.BusinessId == businessId);
+		IQueryable<Category> query = _context.Categories.Where((Category b) => b.BusinessId == businessId && !b.IsArchived);
 		if (!string.IsNullOrWhiteSpace(search))
 		{
 			query = query.Where((Category b) => b.Name.Contains(search));

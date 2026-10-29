@@ -10,11 +10,13 @@ public interface IRepository<T> where T : class
 {
 	Task<List<T>> GetAllAsync(Expression<Func<T, bool>>? filter = null);
 
-	Task<T> GetAsync(Expression<Func<T, bool>> filter = null, bool tracked = true);
+	Task<T?> GetAsync(Expression<Func<T, bool>>? filter = null, bool tracked = true);
 
 	Task CreateAsync(T entiry);
 
 	Task RemoveAsync(T entiry);
+
+	Task ArchiveAsync(T entity, Guid? archivedByUserId, string? reason = null);
 
 	Task UpdateAsync(T entity);
 
@@ -24,7 +26,6 @@ public interface IRepository<T> where T : class
 
 	Task<List<T>> GetPaginatedAsync(int? skip = null, int? take = null, Expression<Func<T, bool>>? filter = null);
 
-	Task<List<string>> UploadFilesAsync(IEnumerable<IFormFile> files, string uploadPath);
 
 	Task<string?> GetUserRoleAsync(Guid userId, Guid businessId);
 }

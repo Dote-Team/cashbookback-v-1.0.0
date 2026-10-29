@@ -21,7 +21,7 @@ public sealed class AuditScope
 		}
 	}
 
-	private static readonly AsyncLocal<AuditScope?> Ambient = new AsyncLocal<AuditScope>();
+	private static readonly AsyncLocal<AuditScope?> Ambient = new AsyncLocal<AuditScope?>();
 
 	private int _changeCount;
 
@@ -71,7 +71,7 @@ public sealed class AuditScope
 
 	public static IDisposable Begin(out AuditScope scope)
 	{
-		AuditScope value = Ambient.Value;
+		AuditScope? value = Ambient.Value;
 		scope = new AuditScope();
 		Ambient.Value = scope;
 		return new Restore(value);
@@ -89,13 +89,7 @@ public sealed class AuditScope
 			return Action;
 		}
 		string resource = entityName.ToLowerInvariant();
-		if (1 == 0)
-		{
-		}
 		string text = ((operation == "Added") ? "create" : ((!(operation == "Deleted")) ? "update" : "delete"));
-		if (1 == 0)
-		{
-		}
 		string verb = text;
 		return AuditAction.Generic(resource, verb);
 	}

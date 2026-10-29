@@ -21,7 +21,7 @@ public class Setting
 	[ForeignKey("Book")]
 	public Guid BookId { get; set; }
 
-	public Book Book { get; set; }
+	public Book Book { get; set; } = null!;
 
 	[Required]
 	public DateTime CreatedAt { get; set; } = DateTime.Now;

@@ -1,5 +1,5 @@
 using System;
-using System.Security.Claims;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using cashbook.Dto;
 using cashbook.Dto.business;
@@ -9,11 +9,12 @@ namespace cashbook.Interfaces;
 
 public interface IBusinessRepository : IRepository<Business>
 {
-	Task<bool> CreateBussinessAsync(CreateBusinessDto createBusinessDto, Guid userId);
+	Task<Guid> CreateBussinessAsync(CreateBusinessDto createBusinessDto);
 
-	Task<PaginatedResponse<BusinessDto>> GetPaginatedBusinessesAsync(ClaimsPrincipal userClaims, int? skip = 1, int? take = 25, string search = null);
+	/// <param name="accessibleBookIds">خزائن المستخدم، أو null للسوبر أدمن (كل شيء).</param>
+	Task<PaginatedResponse<BusinessDto>> GetPaginatedBusinessesAsync(List<Guid> businessIds, List<Guid>? accessibleBookIds, string role, int? skip = 1, int? take = 25, string? search = null);
 
-	Task<BusinessWithBooksDto?> GetBusinessWithBooksDtoByIdAsync(Guid Id);
+	Task<BusinessWithBooksDto?> GetBusinessWithBooksDtoByIdAsync(Guid id, List<Guid>? accessibleBookIds);
 
-	Task<bool> DeleteBusinessAsync(Guid businessId);
+	Task<bool> ArchiveBusinessAsync(Guid businessId, Guid archivedByUserId, string? reason = null);
 }

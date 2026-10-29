@@ -5,7 +5,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace cashbook.Models;
 
-public class Contact
+public class Contact : IArchivable, IBusinessScoped
 {
 	[Required]
 	[Key]
@@ -13,15 +13,15 @@ public class Contact
 	public Guid Id { get; set; }
 
 	[Required]
-	public string Name { get; set; }
+	public string Name { get; set; } = string.Empty;
 
-	public string Phone { get; set; }
+	public string Phone { get; set; } = string.Empty;
 
 	[Required]
 	[ForeignKey("Business")]
 	public Guid BusinessId { get; set; }
 
-	public Business Business { get; set; }
+	public Business Business { get; set; } = null!;
 
 	[Required]
 	public DateTime CreatedAt { get; set; } = DateTime.Now;
@@ -29,5 +29,14 @@ public class Contact
 	[Required]
 	public DateTime UpdatedAt { get; set; } = DateTime.Now;
 
-	public ICollection<Transaction> Transactions { get; set; }
+	public ICollection<Transaction> Transactions { get; set; } = new List<Transaction>();
+
+	public bool IsArchived { get; set; }
+
+	public DateTime? ArchivedAt { get; set; }
+
+	public Guid? ArchivedByUserId { get; set; }
+
+	[MaxLength(500)]
+	public string? ArchiveReason { get; set; }
 }

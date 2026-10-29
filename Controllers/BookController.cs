@@ -1,13 +1,11 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
-using AutoMapper;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Swashbuckle.AspNetCore.Annotations;
+using cashbook.Data;
 using cashbook.Dto;
 using cashbook.Dto.Book;
 using cashbook.Dto.book;
@@ -15,340 +13,255 @@ using cashbook.Dto.setting;
 using cashbook.Helper;
 using cashbook.Interfaces;
 using cashbook.Models;
+using cashbook.Services;
 
 namespace cashbook.Controllers;
 
+/// <summary>الخزائن داخل المنشأة، مع أرصدتها بالدينار والدولار. كل خزنة لها صلاحيات مستقلة لكل مستخدم.</summary>
 [Route("API/[Controller]")]
-[ApiController]
-public class BookController : ControllerBase
+[Authorize]
+public class BookController : ApiControllerBase
 {
-	protected APIResponse _response;
-
-	private readonly IMapper _mapper;
-
 	private readonly IBookRepository _bookRepository;
 
-	public BookController(IBookRepository bookRepository, IMapper mapper)
+	private readonly IPermissionService _permissions;
+
+	private readonly ApplicationDbContext _context;
+
+	public BookController(IBookRepository bookRepository, IPermissionService permissions, ApplicationDbContext context)
 	{
 		_bookRepository = bookRepository;
-		_response = new APIResponse();
-		_mapper = mapper;
+		_permissions = permissions;
+		_context = context;
 	}
 
+	/// <summary>خزائن منشأة مع أرصدتها</summary>
+	/// <remarks>
+	/// **الصلاحية:** عضو في المنشأة. تُعاد الخزائن التي تملك book.view عليها فقط.
+	///
+	/// الرصيد = الإيداعات − السحوبات، بالدينار والدولار كلٌّ على حدة. القيود المؤرشفة لا تدخل في الرصيد.
+	/// </remarks>
+	/// <param name="businessId">معرّف المنشأة.</param>
+	/// <param name="skip">رقم الصفحة، يبدأ من 1.</param>
+	/// <param name="take">عدد السجلات في الصفحة.</param>
+	/// <param name="search">بحث في اسم الخزنة.</param>
+	/// <param name="sortBy">الترتيب: Name أو CreatedAt أو Balance (الدينار ثم الدولار).</param>
+	/// <param name="sortDirection">asc أو desc.</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
 	[HttpGet]
-	[Authorize]
-	[ProducesResponseType(403)]
-	[ProducesResponseType(401)]
-	[ProducesResponseType(200)]
-	[SwaggerOperation(null, null, Summary = "Get paginated books with sorting")]
 	public async Task<ActionResult<APIResponse>> GetPaginatedBooks([FromQuery] Guid businessId, [FromQuery] int? skip = 1, [FromQuery] int? take = 25, [FromQuery] string? search = null, [FromQuery] SortField? sortBy = null, [FromQuery] SortDirection? sortDirection = SortDirection.desc)
 	{
-		try
+		if (CallerId is not Guid callerId)
 		{
-			string[] allowedRoles = Roles.AnyMember;
-			string userIdStr = base.User.FindFirst("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier")?.Value;
-			Guid userId = Guid.Parse(userIdStr);
-			string userRole = await _bookRepository.GetUserRoleAsync(userId, businessId);
-			if (userRole == null || !Enumerable.Contains(allowedRoles, userRole.ToLower()))
-			{
-				_response.StatusCode = HttpStatusCode.Forbidden;
-				_response.IsSuccess = false;
-				_response.ErrorMessages = new List<string> { "You do not have permission to view books for this business." };
-				return Forbid();
-			}
-			PaginatedResponse<BookDto> paginatedBooks = await _bookRepository.GetBooksAsync(businessId, userId, skip, take, search, sortBy, sortDirection);
-			PaginatedResponse<BookDto> paginatedResponse = new PaginatedResponse<BookDto>
-			{
-				Data = paginatedBooks.Data,
-				TotalRecords = paginatedBooks.TotalRecords,
-				Skip = paginatedBooks.Skip,
-				Take = paginatedBooks.Take
-			};
-			_response.Result = paginatedResponse;
-			_response.StatusCode = HttpStatusCode.OK;
-			_response.IsSuccess = true;
-			return Ok(_response);
+			return NoCaller();
 		}
-		catch (UnauthorizedAccessException ex)
+		if (!await _permissions.IsBusinessMemberAsync(callerId, businessId))
 		{
-			UnauthorizedAccessException uaex = ex;
-			_response.IsSuccess = false;
-			_response.StatusCode = HttpStatusCode.Forbidden;
-			_response.ErrorMessages = new List<string> { uaex.Message };
-			return StatusCode(403, _response);
+			return Fail(HttpStatusCode.Forbidden, "لا تملك صلاحية على هذه المنشأة.");
 		}
-		catch (Exception ex2)
-		{
-			Exception ex3 = ex2;
-			_response.IsSuccess = false;
-			_response.ErrorMessages = new List<string> { ex3.ToString() };
-			return StatusCode(500, _response);
-		}
+		List<Guid>? allowed = await _permissions.IsSuperAdminAsync(callerId)
+			? null
+			: await _permissions.GetBookIdsAsync(callerId, businessId, Permissions.BookView);
+		return Success(await _bookRepository.GetBooksAsync(businessId, allowed, skip, take, search, sortBy, sortDirection));
 	}
 
+	/// <summary>تفاصيل خزنة</summary>
+	/// <remarks>
+	/// **الصلاحية:** book.view على الخزنة. يشمل الأرصدة وإعدادات الخزنة.
+	/// </remarks>
+	/// <param name="id">معرّف الخزنة.</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
+	/// <response code="404">السجل غير موجود، أو مؤرشف.</response>
 	[HttpGet("{id:Guid}", Name = "GetBook")]
-	[Authorize]
-	[ProducesResponseType(403)]
-	[ProducesResponseType(401)]
-	[ProducesResponseType(200)]
-	[ProducesResponseType(404)]
-	[ProducesResponseType(400)]
-	[SwaggerOperation(null, null, Summary = "all")]
 	public async Task<ActionResult<APIResponse>> GetBook(Guid id)
 	{
-		try
+		if (CallerId is not Guid callerId)
 		{
-			string userIdStr = base.User.FindFirst("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier")?.Value;
-			Guid userId = Guid.Parse(userIdStr);
-			if (id == Guid.Empty)
-			{
-				_response.StatusCode = HttpStatusCode.BadRequest;
-				_response.IsSuccess = false;
-				_response.ErrorMessages = new List<string> { "Invalid book ID." };
-				return BadRequest(_response);
-			}
-			BookDetailsDto bookDto = await _bookRepository.GetBookDetailsByIdAsync(id, userId);
-			if (bookDto == null)
-			{
-				_response.StatusCode = HttpStatusCode.NotFound;
-				_response.IsSuccess = false;
-				_response.ErrorMessages = new List<string> { "Book not found." };
-				return NotFound(_response);
-			}
-			_response.Result = bookDto;
-			_response.StatusCode = HttpStatusCode.OK;
-			_response.IsSuccess = true;
-			return Ok(_response);
+			return NoCaller();
 		}
-		catch (Exception ex)
+		BookAccess access = await _permissions.CheckBookAsync(callerId, id, Permissions.BookView);
+		if (access.Status != AccessStatus.Granted)
 		{
-			Exception ex2 = ex;
-			_response.IsSuccess = false;
-			_response.ErrorMessages = new List<string> { ex2.Message };
-			_response.StatusCode = HttpStatusCode.InternalServerError;
-			return StatusCode(500, _response);
+			// من لا يملك الخزنة لا يعرف حتى أنها موجودة.
+			return Fail(HttpStatusCode.NotFound, "الخزنة غير موجودة.");
 		}
+		BookDetailsDto? book = await _bookRepository.GetBookDetailsByIdAsync(id);
+		return book == null ? Fail(HttpStatusCode.NotFound, "الخزنة غير موجودة.") : Success(book);
 	}
 
+	/// <summary>إنشاء خزنة</summary>
+	/// <remarks>
+	/// **الصلاحية:** السوبر أدمن فقط.
+	///
+	/// بعد الإنشاء امنح الأدمن صلاحياته عليها من /API/UserManagement/{id}/permissions.
+	/// </remarks>
+	/// <param name="createBookDto">اسم الخزنة والمنشأة التي تتبعها.</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
+	/// <response code="400">بيانات الطلب ناقصة أو غير صالحة. السبب في errorMessages.</response>
+	/// <response code="404">المنشأة غير موجودة.</response>
 	[HttpPost]
-	[Authorize]
-	[ProducesResponseType(403)]
-	[ProducesResponseType(401)]
-	[ProducesResponseType(201)]
-	[ProducesResponseType(500)]
-	[ProducesResponseType(400)]
-	[SwaggerOperation(null, null, Summary = "owner , partner")]
 	public async Task<ActionResult<APIResponse>> CreateBook([FromBody] CreateBookDto createBookDto)
 	{
-		try
+		if (CallerId is not Guid callerId)
 		{
-			string[] allowedRoles = Roles.Management;
-			string userIdStr = base.User.FindFirst("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier")?.Value;
-			Guid userId = Guid.Parse(userIdStr);
-			string userRole = await _bookRepository.GetUserRoleAsync(userId, createBookDto.BusinessId);
-			if (userRole == null || !Enumerable.Contains(allowedRoles, userRole.ToLower()))
-			{
-				_response.StatusCode = HttpStatusCode.Forbidden;
-				_response.IsSuccess = false;
-				_response.ErrorMessages = new List<string> { "You do not have permission to add books for this business." };
-				return Forbid();
-			}
-			if (createBookDto == null)
-			{
-				return BadRequest(createBookDto);
-			}
-			await _bookRepository.CreateBookAsync(createBookDto);
-			_response.StatusCode = HttpStatusCode.Created;
-			_response.IsSuccess = true;
-			return _response;
+			return NoCaller();
 		}
-		catch (Exception ex)
+		if (createBookDto == null || string.IsNullOrWhiteSpace(createBookDto.Name))
 		{
-			Exception ex2 = ex;
-			_response.IsSuccess = false;
-			_response.ErrorMessages = new List<string> { ex2.ToString() };
+			return Fail(HttpStatusCode.BadRequest, "اسم الخزنة مطلوب.");
 		}
-		return _response;
+		if (!await _permissions.IsSuperAdminAsync(callerId))
+		{
+			return Fail(HttpStatusCode.Forbidden, "إنشاء الخزائن للسوبر أدمن فقط.");
+		}
+		if (!await _context.Businesses.AnyAsync(b => b.Id == createBookDto.BusinessId))
+		{
+			return Fail(HttpStatusCode.NotFound, "المنشأة غير موجودة.");
+		}
+		if (!await _bookRepository.CreateBookAsync(createBookDto))
+		{
+			return Fail(HttpStatusCode.InternalServerError, "تعذّر إنشاء الخزنة.");
+		}
+		return Success(null, HttpStatusCode.Created);
 	}
 
+	/// <summary>أرشفة خزنة (لا حذف)</summary>
+	/// <remarks>
+	/// **الصلاحية:** book.archive على الخزنة.
+	///
+	/// تختفي الخزنة وقيودها من القوائم والأرصدة دون رجعة، وتبقى في الأرشيف. مثل POST /{id}/archive.
+	/// </remarks>
+	/// <param name="id">معرّف الخزنة.</param>
+	/// <param name="reason">سبب الأرشفة (اختياري).</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
+	/// <response code="404">السجل غير موجود، أو مؤرشف.</response>
 	[HttpDelete("{id:Guid}", Name = "DeleteBook")]
-	[Authorize]
-	[ProducesResponseType(204)]
-	[ProducesResponseType(404)]
-	[ProducesResponseType(403)]
-	[ProducesResponseType(401)]
-	[ProducesResponseType(400)]
-	[SwaggerOperation(null, null, Summary = "owner , partner")]
-	public async Task<ActionResult<APIResponse>> DeleteBook(Guid id, Guid businessId)
+	public Task<ActionResult<APIResponse>> DeleteBook(Guid id, [FromQuery] string? reason = null) => ArchiveCore(id, reason);
+
+	/// <summary>أرشفة خزنة</summary>
+	/// <remarks>
+	/// **الصلاحية:** book.archive على الخزنة. دون رجعة.
+	/// </remarks>
+	/// <param name="id">معرّف الخزنة.</param>
+	/// <param name="reason">سبب الأرشفة (اختياري).</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
+	/// <response code="404">السجل غير موجود، أو مؤرشف.</response>
+	[HttpPost("{id:Guid}/archive")]
+	public Task<ActionResult<APIResponse>> ArchiveBook(Guid id, [FromQuery] string? reason = null) => ArchiveCore(id, reason);
+
+	private async Task<ActionResult<APIResponse>> ArchiveCore(Guid id, string? reason)
 	{
-		try
+		if (CallerId is not Guid callerId)
 		{
-			Guid? callerId = base.User.GetUserId();
-			if (!callerId.HasValue)
-			{
-				_response.StatusCode = HttpStatusCode.Unauthorized;
-				_response.IsSuccess = false;
-				_response.ErrorMessages = new List<string> { "Invalid token." };
-				return Unauthorized(_response);
-			}
-			if (id == Guid.Empty)
-			{
-				return BadRequest("Invalid book ID.");
-			}
-			Book existingBook = await _bookRepository.GetAsync((Book u) => u.Id == id);
-			if (existingBook == null)
-			{
-				return NotFound("Book not found.");
-			}
-			// الفحص واقع على منشأة الخزنة نفسها، لا على منشأة يرسلها المستدعي في الطلب.
-			string userRole = await _bookRepository.GetUserRoleAsync(callerId.Value, existingBook.BusinessId);
-			if (userRole == null || !Enumerable.Contains(Roles.Management, userRole.ToLower()))
-			{
-				_response.StatusCode = HttpStatusCode.Forbidden;
-				_response.IsSuccess = false;
-				_response.ErrorMessages = new List<string> { "لا تملك صلاحية حذف هذه الخزنة." };
-				return Forbid();
-			}
-			await _bookRepository.DeleteBookAsync(id);
-			_response.StatusCode = HttpStatusCode.NoContent;
-			_response.IsSuccess = true;
-			return Ok(_response);
+			return NoCaller();
 		}
-		catch (DbUpdateException)
+		BookAccess access = await _permissions.CheckBookAsync(callerId, id, Permissions.BookArchive);
+		if (access.Status != AccessStatus.Granted)
 		{
-			// حذف خزنة ترتبط بها حركات أو أسعار صرف يخالف قيود المفاتيح الأجنبية.
-			// كان الخطأ يخرج برمز 500 مع رسالة Entity Framework الخام بالإنجليزية،
-			// وهذا يستوجب تعارضاً (409) لا عطلاً، ورسالة يفهما المستخدم.
-			_response.IsSuccess = false;
-			_response.StatusCode = HttpStatusCode.Conflict;
-			_response.ErrorMessages = new List<string>
-			{
-				"لا يمكن حذف الخزنة لارتباطها ببيانات أخرى: انقل أو احذف حركاتها وأسعار صرفها أولاً."
-			};
-			return StatusCode(StatusCodes.Status409Conflict, _response);
+			return Denied(access.Status, "لا تملك صلاحية أرشفة هذه الخزنة.");
 		}
-		catch (Exception ex)
-		{
-			Exception ex2 = ex;
-			_response.IsSuccess = false;
-			_response.ErrorMessages = new List<string> { ex2.Message };
-			return StatusCode(500, _response);
-		}
+		await _bookRepository.ArchiveBookAsync(id, callerId, reason);
+		return Success(new { archived = true });
 	}
 
+	/// <summary>تعديل خزنة</summary>
+	/// <remarks>
+	/// **الصلاحية:** book.edit على الخزنة. نقلها إلى منشأة أخرى (businessId) للسوبر أدمن فقط.
+	///
+	/// أرسل الحقل الذي تريد تغييره فقط.
+	/// </remarks>
+	/// <param name="id">معرّف الخزنة.</param>
+	/// <param name="updateBookDto">الاسم الجديد، والمنشأة اختيارياً.</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
+	/// <response code="400">بيانات الطلب ناقصة أو غير صالحة. السبب في errorMessages.</response>
+	/// <response code="404">السجل غير موجود، أو مؤرشف.</response>
 	[HttpPut("{id:Guid}", Name = "UpdateBook")]
-	[Authorize]
-	[ProducesResponseType(204)]
-	[ProducesResponseType(200)]
-	[ProducesResponseType(400)]
-	[SwaggerOperation(null, null, Summary = "owner , partner")]
 	public async Task<ActionResult<APIResponse>> UpdateBook([FromRoute] Guid id, [FromBody] UpdateBookDto updateBookDto)
 	{
-		try
+		if (CallerId is not Guid callerId)
 		{
-			Guid? callerId = base.User.GetUserId();
-			if (!callerId.HasValue)
-			{
-				_response.StatusCode = HttpStatusCode.Unauthorized;
-				_response.IsSuccess = false;
-				_response.ErrorMessages = new List<string> { "Invalid token." };
-				return Unauthorized(_response);
-			}
-			if (updateBookDto == null)
-			{
-				return BadRequest();
-			}
-			Book existingBook = await _bookRepository.GetAsync((Book u) => u.Id == id);
-			if (existingBook == null)
-			{
-				return NotFound("Book not found.");
-			}
-			// الفحص واقع على منشأة الخزنة نفسها، لا على منشأة يرسلها المستدعي في جسم الطلب.
-			string userRole = await _bookRepository.GetUserRoleAsync(callerId.Value, existingBook.BusinessId);
-			if (userRole == null || !Enumerable.Contains(Roles.Management, userRole.ToLower()))
-			{
-				_response.StatusCode = HttpStatusCode.Forbidden;
-				_response.IsSuccess = false;
-				_response.ErrorMessages = new List<string> { "لا تملك صلاحية تعديل هذه الخزنة." };
-				return Forbid();
-			}
-			// إرسال منشأة أخرى يعني نقل الخزنة إليها، فيُشترط أن يملك المستدعي صلاحية عليها أيضاً.
-			if (updateBookDto.BusinessId != Guid.Empty && updateBookDto.BusinessId != existingBook.BusinessId)
-			{
-				string targetRole = await _bookRepository.GetUserRoleAsync(callerId.Value, updateBookDto.BusinessId);
-				if (targetRole == null || !Enumerable.Contains(Roles.Management, targetRole.ToLower()))
-				{
-					_response.StatusCode = HttpStatusCode.Forbidden;
-					_response.IsSuccess = false;
-					_response.ErrorMessages = new List<string> { "لا تملك صلاحية نقل الخزنة إلى المنشأة المطلوبة." };
-					return Forbid();
-				}
-			}
-			_mapper.Map(updateBookDto, existingBook);
-			await _bookRepository.UpdateAsync(existingBook);
-			_response.Result = existingBook;
-			_response.StatusCode = HttpStatusCode.NoContent;
-			_response.IsSuccess = true;
-			return Ok(_response);
+			return NoCaller();
 		}
-		catch (Exception ex)
+		if (updateBookDto == null)
 		{
-			Exception ex2 = ex;
-			_response.IsSuccess = false;
-			_response.ErrorMessages = new List<string> { ex2.ToString() };
+			return Fail(HttpStatusCode.BadRequest, "بيانات غير صالحة.");
 		}
-		return _response;
+		BookAccess access = await _permissions.CheckBookAsync(callerId, id, Permissions.BookEdit);
+		if (access.Status != AccessStatus.Granted)
+		{
+			return Denied(access.Status, "لا تملك صلاحية تعديل هذه الخزنة.");
+		}
+		Book book = await _context.Books.FirstAsync(b => b.Id == id);
+		if (updateBookDto.BusinessId != Guid.Empty && updateBookDto.BusinessId != book.BusinessId)
+		{
+			// نقل الخزنة إلى منشأة أخرى يغيّر من يراها، فهو للسوبر أدمن وحده.
+			if (!await _permissions.IsSuperAdminAsync(callerId))
+			{
+				return Fail(HttpStatusCode.Forbidden, "نقل الخزنة إلى منشأة أخرى للسوبر أدمن فقط.");
+			}
+			if (!await _context.Businesses.AnyAsync(b => b.Id == updateBookDto.BusinessId))
+			{
+				return Fail(HttpStatusCode.NotFound, "المنشأة المطلوبة غير موجودة.");
+			}
+			book.BusinessId = updateBookDto.BusinessId;
+		}
+		if (!string.IsNullOrWhiteSpace(updateBookDto.Name))
+		{
+			book.Name = updateBookDto.Name.Trim();
+		}
+		book.UpdatedAt = DateTime.UtcNow;
+		await _context.SaveChangesAsync();
+		return Success(new BookDto
+		{
+			Id = book.Id,
+			Name = book.Name,
+			BusinessId = book.BusinessId,
+			CreatedAt = book.CreatedAt,
+			UpdatedAt = book.UpdatedAt
+		});
 	}
 
+	/// <summary>إعدادات الخزنة</summary>
+	/// <remarks>
+	/// **الصلاحية:** book.edit على الخزنة.
+	///
+	/// تحدد الحقول الإلزامية عند إضافة قيد: categoryStatus (التصنيف)، paymentMethodStatus (طريقة الدفع)، contactStatus (جهة الاتصال).
+	/// أرسل الحقل الذي تريد تغييره فقط.
+	/// </remarks>
+	/// <param name="bookId">معرّف الخزنة.</param>
+	/// <param name="dto">الإعدادات المراد تغييرها.</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
+	/// <response code="404">السجل غير موجود، أو مؤرشف.</response>
 	[HttpPatch("{bookId:Guid}/setting")]
-	[Authorize]
-	[ProducesResponseType(200)]
-	[ProducesResponseType(403)]
-	[ProducesResponseType(404)]
-	[ProducesResponseType(400)]
-	[SwaggerOperation(null, null, Summary = "Patch book setting statuses (owner, partner)")]
 	public async Task<ActionResult<APIResponse>> PatchBookSetting(Guid bookId, [FromBody] UpdateSettingDto dto)
 	{
-		try
+		if (CallerId is not Guid callerId)
 		{
-			string[] allowedRoles = Roles.Management;
-			string userIdStr = base.User.FindFirst("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier")?.Value;
-			Guid userId = Guid.Parse(userIdStr);
-			Book book = await _bookRepository.GetAsync((Book b) => b.Id == bookId);
-			if (book == null)
-			{
-				_response.StatusCode = HttpStatusCode.NotFound;
-				_response.IsSuccess = false;
-				_response.ErrorMessages = new List<string> { "Book not found." };
-				return NotFound(_response);
-			}
-			string userRole = await _bookRepository.GetUserRoleAsync(userId, book.BusinessId);
-			if (userRole == null || !Enumerable.Contains(allowedRoles, userRole.ToLower()))
-			{
-				_response.StatusCode = HttpStatusCode.Forbidden;
-				_response.IsSuccess = false;
-				_response.ErrorMessages = new List<string> { "You do not have permission to update settings for this book." };
-				return Forbid();
-			}
-			if (!(await _bookRepository.UpdateSettingAsync(bookId, dto)))
-			{
-				_response.StatusCode = HttpStatusCode.NotFound;
-				_response.IsSuccess = false;
-				_response.ErrorMessages = new List<string> { "Setting not found for this book." };
-				return NotFound(_response);
-			}
-			_response.StatusCode = HttpStatusCode.OK;
-			_response.IsSuccess = true;
-			_response.Result = "Setting updated successfully.";
-			return Ok(_response);
+			return NoCaller();
 		}
-		catch (Exception ex)
+		BookAccess access = await _permissions.CheckBookAsync(callerId, bookId, Permissions.BookEdit);
+		if (access.Status != AccessStatus.Granted)
 		{
-			Exception ex2 = ex;
-			_response.StatusCode = HttpStatusCode.InternalServerError;
-			_response.IsSuccess = false;
-			_response.ErrorMessages = new List<string> { ex2.Message };
-			return StatusCode(500, _response);
+			return Denied(access.Status, "لا تملك صلاحية تعديل إعدادات هذه الخزنة.");
 		}
+		if (!await _bookRepository.UpdateSettingAsync(bookId, dto))
+		{
+			return Fail(HttpStatusCode.NotFound, "إعدادات الخزنة غير موجودة.");
+		}
+		return Success("Setting updated successfully.");
 	}
 }

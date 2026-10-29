@@ -12,16 +12,16 @@ public class Session
 	public Guid Id { get; set; }
 
 	[Required]
-	public string RefreshToken { get; set; }
+	public string RefreshToken { get; set; } = string.Empty;
 
 	[Required]
-	public string DeviceToken { get; set; }
+	public string DeviceToken { get; set; } = string.Empty;
 
 	[Required]
 	[ForeignKey("User")]
 	public Guid UserId { get; set; }
 
-	public User User { get; set; }
+	public User User { get; set; } = null!;
 
 	public DateTime ExpiredAt { get; set; }
 }

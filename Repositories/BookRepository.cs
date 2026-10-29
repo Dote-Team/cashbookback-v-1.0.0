@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -54,45 +54,15 @@ public class BookRepository : Repository<Book>, IBookRepository, IRepository<Boo
 		}
 	}
 
-	public async Task<PaginatedResponse<BookDto>> GetBooksAsync(Guid businessId, Guid userId, int? skip = 1, int? take = 25, string search = null, SortField? sortBy = null, SortDirection? sortDirection = SortDirection.desc)
+	/// <param name="allowedBookIds">الخزائن التي يملك المستخدم عرضها، أو null للسوبر أدمن (كل خزائن المنشأة).</param>
+	public async Task<PaginatedResponse<BookDto>> GetBooksAsync(Guid businessId, List<Guid>? allowedBookIds, int? skip = 1, int? take = 25, string? search = null, SortField? sortBy = null, SortDirection? sortDirection = SortDirection.desc)
 	{
-		int currentPage = skip ?? 1;
-		int currentPageSize = take ?? 25;
-		var businessUser = await (from bu in _context.BusinessUsers
-			where bu.BusinessId == businessId && bu.UserId == userId
-			select new
-			{
-				Role = bu.Role.ToLower(),
-				BookIds = bu.BookIds
-			}).FirstOrDefaultAsync();
-		if (businessUser == null)
-		{
-			return new PaginatedResponse<BookDto>
-			{
-				TotalRecords = 0,
-				Skip = currentPage,
-				Take = currentPageSize,
-				Data = new List<BookDto>()
-			};
-		}
+		int currentPage = Math.Max(1, skip ?? 1);
+		int currentPageSize = Math.Clamp(take ?? 25, 1, 200);
 		IQueryable<Book> query = _context.Books.Where((Book b) => b.BusinessId == businessId);
-		bool flag;
-		switch (businessUser.Role)
+		if (allowedBookIds != null)
 		{
-		case "admin":
-		case "dataoperator":
-		case "staff":
-		case "privateviewer":
-		case "portfolio_manager":
-			flag = true;
-			break;
-		default:
-			flag = false;
-			break;
-		}
-		if (flag)
-		{
-			if (businessUser.BookIds == null || !businessUser.BookIds.Any())
+			if (allowedBookIds.Count == 0)
 			{
 				return new PaginatedResponse<BookDto>
 				{
@@ -102,7 +72,7 @@ public class BookRepository : Repository<Book>, IBookRepository, IRepository<Boo
 					Data = new List<BookDto>()
 				};
 			}
-			query = query.Where((Book b) => businessUser.BookIds.Contains(b.Id));
+			query = query.Where((Book b) => allowedBookIds.Contains(b.Id));
 		}
 		if (!string.IsNullOrWhiteSpace(search))
 		{
@@ -116,76 +86,22 @@ public class BookRepository : Repository<Book>, IBookRepository, IRepository<Boo
 				BusinessId = b.BusinessId,
 				CreatedAt = b.CreatedAt,
 				UpdatedAt = b.UpdatedAt,
-				CashInIqd = (b.Transactions.AsQueryable().Where((Transaction t) => (int)t.Currency == 2 && t.Type == "cash in").Sum((Transaction t) => (decimal?)t.Amount) ?? 0m),
-				CashOutIqd = (b.Transactions.AsQueryable().Where((Transaction t) => (int)t.Currency == 2 && t.Type == "cash out").Sum((Transaction t) => (decimal?)t.Amount) ?? 0m),
-				CashInUsd = (b.Transactions.AsQueryable().Where((Transaction t) => (int)t.Currency == 1 && t.Type == "cash in").Sum((Transaction t) => (decimal?)t.Amount) ?? 0m),
-				CashOutUsd = (b.Transactions.AsQueryable().Where((Transaction t) => (int)t.Currency == 1 && t.Type == "cash out").Sum((Transaction t) => (decimal?)t.Amount) ?? 0m)
+				CashInIqd = (b.Transactions.AsQueryable().Where((Transaction t) => !t.IsArchived && t.Currency == CurrencyCode.IQD && t.Type == "cash in").Sum((Transaction t) => (decimal?)t.Amount) ?? 0m),
+				CashOutIqd = (b.Transactions.AsQueryable().Where((Transaction t) => !t.IsArchived && t.Currency == CurrencyCode.IQD && t.Type == "cash out").Sum((Transaction t) => (decimal?)t.Amount) ?? 0m),
+				CashInUsd = (b.Transactions.AsQueryable().Where((Transaction t) => !t.IsArchived && t.Currency == CurrencyCode.USD && t.Type == "cash in").Sum((Transaction t) => (decimal?)t.Amount) ?? 0m),
+				CashOutUsd = (b.Transactions.AsQueryable().Where((Transaction t) => !t.IsArchived && t.Currency == CurrencyCode.USD && t.Type == "cash out").Sum((Transaction t) => (decimal?)t.Amount) ?? 0m)
 			};
-		if (1 == 0)
+		bool ascending = sortDirection == SortDirection.asc;
+		bool known = sortDirection is SortDirection.asc or SortDirection.desc;
+		booksRaw = (known ? sortBy : null) switch
 		{
-		}
-		IOrderedQueryable<BookAggregate> orderedQueryable;
-		switch (sortBy)
-		{
-		case SortField.Name:
-			if (sortDirection.HasValue)
-			{
-				SortDirection valueOrDefault = sortDirection.GetValueOrDefault();
-				SortDirection sortDirection2 = valueOrDefault;
-				if (sortDirection2 == SortDirection.asc)
-				{
-					orderedQueryable = booksRaw.OrderBy(b => b.Name);
-					break;
-				}
-				if (sortDirection2 == SortDirection.desc)
-				{
-					orderedQueryable = booksRaw.OrderByDescending(b => b.Name);
-					break;
-				}
-			}
-			goto default;
-		case SortField.CreatedAt:
-			if (sortDirection.HasValue)
-			{
-				SortDirection valueOrDefault = sortDirection.GetValueOrDefault();
-				SortDirection sortDirection2 = valueOrDefault;
-				if (sortDirection2 == SortDirection.asc)
-				{
-					orderedQueryable = booksRaw.OrderBy(b => b.CreatedAt);
-					break;
-				}
-				if (sortDirection2 == SortDirection.desc)
-				{
-					orderedQueryable = booksRaw.OrderByDescending(b => b.CreatedAt);
-					break;
-				}
-			}
-			goto default;
-		case SortField.Balance:
-			if (sortDirection.HasValue)
-			{
-				SortDirection valueOrDefault = sortDirection.GetValueOrDefault();
-				SortDirection sortDirection2 = valueOrDefault;
-				if (sortDirection2 == SortDirection.asc)
-				{
-					orderedQueryable = booksRaw.OrderBy(b => b.CashInIqd - b.CashOutIqd);
-					break;
-				}
-				if (sortDirection2 == SortDirection.desc)
-				{
-					orderedQueryable = booksRaw.OrderByDescending(b => b.CashInIqd - b.CashOutIqd);
-					break;
-				}
-			}
-			goto default;
-		default:
-			orderedQueryable = booksRaw.OrderByDescending(b => b.CreatedAt);
-			break;
-		}
-		if (1 == 0)
-		{
-		}
-		booksRaw = orderedQueryable;
+			SortField.Name => ascending ? booksRaw.OrderBy(b => b.Name) : booksRaw.OrderByDescending(b => b.Name),
+			SortField.CreatedAt => ascending ? booksRaw.OrderBy(b => b.CreatedAt) : booksRaw.OrderByDescending(b => b.CreatedAt),
+			SortField.Balance => ascending
+				? booksRaw.OrderBy(b => b.CashInIqd - b.CashOutIqd).ThenBy(b => b.CashInUsd - b.CashOutUsd)
+				: booksRaw.OrderByDescending(b => b.CashInIqd - b.CashOutIqd).ThenByDescending(b => b.CashInUsd - b.CashOutUsd),
+			_ => booksRaw.OrderByDescending(b => b.CreatedAt)
+		};
 		int totalRecords = await booksRaw.CountAsync();
 		List<BookDto> paginatedBooks = (await booksRaw.Skip((currentPage - 1) * currentPageSize).Take(currentPageSize).ToListAsync()).Select(b =>
 		{
@@ -229,23 +145,10 @@ public class BookRepository : Repository<Book>, IBookRepository, IRepository<Boo
 		public decimal CashOutUsd { get; init; }
 	}
 
-	public async Task<BookDetailsDto?> GetBookDetailsByIdAsync(Guid bookId, Guid userId)
+	public async Task<BookDetailsDto?> GetBookDetailsByIdAsync(Guid bookId)
 	{
-		Book book = await _context.Books.FirstOrDefaultAsync((Book b) => b.Id == bookId);
+		Book? book = await _context.Books.AsNoTracking().FirstOrDefaultAsync((Book b) => b.Id == bookId);
 		if (book == null)
-		{
-			return null;
-		}
-		Guid businessId = book.BusinessId;
-		BusinessUser userBusiness = await _context.BusinessUsers.FirstOrDefaultAsync((BusinessUser bu) => bu.UserId == userId && bu.BusinessId == businessId);
-		if (userBusiness == null)
-		{
-			return null;
-		}
-		string role = userBusiness.Role?.ToLowerInvariant();
-		string[] privilegedRoles = Roles.Privileged;
-		string[] rolesNeedBookCheck = Roles.BookScoped;
-		if (!Enumerable.Contains(privilegedRoles, role) && Enumerable.Contains(rolesNeedBookCheck, role) && (userBusiness.BookIds == null || !userBusiness.BookIds.Contains(bookId)))
 		{
 			return null;
 		}
@@ -291,7 +194,7 @@ public class BookRepository : Repository<Book>, IBookRepository, IRepository<Boo
 		}
 		decimal balanceIqd = cashInTotalIqd - cashOutTotalIqd;
 		decimal balanceUsd = cashInTotalUsd - cashOutTotalUsd;
-		Setting setting = await _context.Settings.FirstOrDefaultAsync((Setting s) => s.BookId == bookId);
+		Setting? setting = await _context.Settings.FirstOrDefaultAsync((Setting s) => s.BookId == bookId);
 		return new BookDetailsDto
 		{
 			Id = book.Id,
@@ -319,71 +222,29 @@ public class BookRepository : Repository<Book>, IBookRepository, IRepository<Boo
 		};
 	}
 
-	public async Task<bool> DeleteBookAsync(Guid bookId)
+	/// <summary>
+	/// أرشفة الخزنة دون رجعة. قيودها لا تُلمس: فلتر الأرشفة على الخزنة يخفيها كلها معها،
+	/// ولا أحد يملك صلاحية على خزنة مؤرشفة.
+	/// </summary>
+	public async Task<bool> ArchiveBookAsync(Guid bookId, Guid archivedByUserId, string? reason = null)
 	{
-		Book book = await _context.Books.Include((Book b) => b.CustomFields).Include((Book b) => b.Transactions).ThenInclude((Transaction t) => t.Attachements)
-			.Include((Book b) => b.Transactions)
-			.ThenInclude((Transaction t) => t.CustomFieldValues)
-			.FirstOrDefaultAsync((Book b) => b.Id == bookId);
+		Book? book = await _context.Books.FirstOrDefaultAsync((Book b) => b.Id == bookId);
 		if (book == null)
 		{
 			return false;
 		}
-		string uploadsFolder = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads");
-		List<Attachement> attachments = book.Transactions.SelectMany(delegate(Transaction t)
-		{
-			IEnumerable<Attachement> attachements = t.Attachements;
-			return attachements ?? Enumerable.Empty<Attachement>();
-		}).ToList();
-		foreach (Attachement attachment in attachments)
-		{
-			if (string.IsNullOrEmpty(attachment.Files))
-			{
-				continue;
-			}
-			string filePath = Path.Combine(uploadsFolder, attachment.Files);
-			if (File.Exists(filePath))
-			{
-				try
-				{
-					File.Delete(filePath);
-				}
-				catch (Exception ex)
-				{
-					Exception ex2 = ex;
-					Console.WriteLine("Failed to delete file " + attachment.Files + ": " + ex2.Message);
-				}
-			}
-		}
-		if (attachments.Any())
-		{
-			_context.Attachements.RemoveRange(attachments);
-		}
-		List<CustomFieldValue> customFieldValues = book.Transactions.SelectMany(delegate(Transaction t)
-		{
-			IEnumerable<CustomFieldValue> customFieldValues2 = t.CustomFieldValues;
-			return customFieldValues2 ?? Enumerable.Empty<CustomFieldValue>();
-		}).ToList();
-		if (customFieldValues.Any())
-		{
-			_context.CustomFieldValues.RemoveRange(customFieldValues);
-		}
-		if (book.Transactions != null && book.Transactions.Any())
-		{
-			_context.Transactions.RemoveRange(book.Transactions);
-		}
-		if (book.CustomFields != null && book.CustomFields.Any())
-		{
-			_context.CustomFields.RemoveRange(book.CustomFields);
-		}
-		_context.Books.Remove(book);
+		book.IsArchived = true;
+		book.ArchivedAt = DateTime.UtcNow;
+		book.ArchivedByUserId = archivedByUserId;
+		book.ArchiveReason = ArchiveText.Reason(reason);
+		book.UpdatedAt = DateTime.UtcNow;
 		await _context.SaveChangesAsync();
 		return true;
 	}
 
 	public async Task<bool> UpdateSettingAsync(Guid bookId, UpdateSettingDto dto)
 	{
-		Setting setting = await _context.Settings.FirstOrDefaultAsync((Setting s) => s.BookId == bookId);
+		Setting? setting = await _context.Settings.FirstOrDefaultAsync((Setting s) => s.BookId == bookId);
 		if (setting == null)
 		{
 			return false;

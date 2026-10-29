@@ -21,13 +21,13 @@ internal sealed class DotEnvConfigurationProvider : ConfigurationProvider
 
 	public override void Load()
 	{
-		Dictionary<string, string> dictionary = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+		Dictionary<string, string?> dictionary = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
 		try
 		{
 			string[] array = File.ReadAllLines(_path);
 			foreach (string raw in array)
 			{
-				KeyValuePair<string, string>? keyValuePair = DotEnv.ParseLine(raw);
+				KeyValuePair<string, string?>? keyValuePair = DotEnv.ParseLine(raw);
 				if (keyValuePair.HasValue)
 				{
 					dictionary[keyValuePair.Value.Key] = keyValuePair.Value.Value;

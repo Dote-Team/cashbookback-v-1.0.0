@@ -11,7 +11,7 @@ public class APIResponse
 
 	public List<string> ErrorMessages { get; set; }
 
-	public object Result { get; set; }
+	public object? Result { get; set; }
 
 	public APIResponse()
 	{

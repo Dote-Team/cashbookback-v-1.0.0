@@ -4,9 +4,12 @@ namespace cashbook.Dto.contact;
 
 public class CreateContactDto
 {
-	public string Name { get; set; }
+	/// <summary>اسم جهة الاتصال.</summary>
+	public string Name { get; set; } = string.Empty;
 
-	public string Phone { get; set; }
+	/// <summary>الهاتف (اختياري).</summary>
+	public string? Phone { get; set; }
 
+	/// <summary>المنشأة.</summary>
 	public Guid BusinessId { get; set; }
 }

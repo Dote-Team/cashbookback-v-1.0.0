@@ -1,0 +1,31 @@
+# syntax=docker/dockerfile:1
+# ============================================================================
+#  صورة «أدوات» تعمل مرة واحدة لتطبيق ترحيالات قاعدة البيانات (EF Core).
+#  لا تُستخدم في التشغيل العادي — تُبنى وتُنفَّذ عند الحاجة فقط:
+#
+#      docker compose --profile tools run --rm migrate
+#
+#  سبب وجودها: الصورة الإنتاجية تحتوي وقت التشغيل فقط ولا تحوي مترجم ولا
+#  أداة dotnet-ef، فلا يمكنها إنشاء الجداول بنفسها.
+# ============================================================================
+FROM mcr.microsoft.com/dotnet/sdk:8.0
+
+WORKDIR /src
+
+ENV DOTNET_CLI_TELEMETRY_OPTOUT=1 \
+    DOTNET_NOLOGO=1 \
+    PATH="$PATH:/root/.dotnet/tools"
+
+# أداة EF بنفس إصدار حزم المشروع (EF Core 9.0.5)
+RUN dotnet tool install --global dotnet-ef --version 9.0.5
+
+COPY . .
+
+RUN dotnet restore cashbook.csproj \
+    && dotnet build cashbook.csproj --configuration Debug --no-restore
+
+# --no-build لأن البناء تم في الطبقة السابقة (تشغيل أسرع ونتائج ثابتة).
+ENTRYPOINT ["dotnet", "ef", "database", "update", \
+    "--project", "cashbook.csproj", \
+    "--startup-project", "cashbook.csproj", \
+    "--no-build"]

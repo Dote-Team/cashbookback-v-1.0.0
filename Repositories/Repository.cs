@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
 using cashbook.Data;
+using cashbook.Helper;
 using cashbook.Interfaces;
 using cashbook.Models;
 
@@ -43,32 +44,7 @@ public class Repository<T> : IRepository<T> where T : class
 		{
 			query = query.Where(filter);
 		}
-		T result = await query.FirstOrDefaultAsync();
-		if (result == null)
-		{
-			return null;
-		}
-		PropertyInfo[] properties = typeof(T).GetProperties(BindingFlags.Instance | BindingFlags.Public);
-		PropertyInfo[] array = properties;
-		foreach (PropertyInfo property in array)
-		{
-			if (!(property.PropertyType == typeof(string)))
-			{
-				continue;
-			}
-			string value = property.GetValue(result) as string;
-			if (!string.IsNullOrEmpty(value) && (value.Trim().StartsWith("{") || value.Trim().StartsWith("[")))
-			{
-				try
-				{
-					property.SetValue(result, JsonConvert.DeserializeObject(value)?.ToString());
-				}
-				catch (JsonReaderException)
-				{
-				}
-			}
-		}
-		return result;
+		return await query.FirstOrDefaultAsync();
 	}
 
 	public async Task<List<T>> GetAllAsync(Expression<Func<T, bool>>? filter = null)
@@ -78,37 +54,25 @@ public class Repository<T> : IRepository<T> where T : class
 		{
 			query = query.Where(filter);
 		}
-		List<T> results = await query.ToListAsync();
-		foreach (T item in results)
-		{
-			PropertyInfo[] properties = typeof(T).GetProperties(BindingFlags.Instance | BindingFlags.Public);
-			PropertyInfo[] array = properties;
-			foreach (PropertyInfo property in array)
-			{
-				if (!(property.PropertyType == typeof(string)))
-				{
-					continue;
-				}
-				string value = property.GetValue(item) as string;
-				if (!string.IsNullOrEmpty(value) && (value.Trim().StartsWith("{") || value.Trim().StartsWith("[")))
-				{
-					try
-					{
-						object deserializedValue = JsonConvert.DeserializeObject(value);
-						property.SetValue(item, deserializedValue);
-					}
-					catch (JsonReaderException)
-					{
-					}
-				}
-			}
-		}
-		return results;
+		return await query.ToListAsync();
 	}
 
 	public async Task RemoveAsync(T entity)
 	{
 		dbSet.Remove(entity);
+		await SaveAsync();
+	}
+
+	public async Task ArchiveAsync(T entity, Guid? archivedByUserId, string? reason = null)
+	{
+		if (entity is not IArchivable archivable)
+		{
+			throw new InvalidOperationException(typeof(T).Name + " لا يدعم الأرشفة.");
+		}
+		archivable.IsArchived = true;
+		archivable.ArchivedAt = DateTime.UtcNow;
+		archivable.ArchivedByUserId = archivedByUserId;
+		archivable.ArchiveReason = ArchiveText.Reason(reason);
 		await SaveAsync();
 	}
 
@@ -151,47 +115,5 @@ public class Repository<T> : IRepository<T> where T : class
 			query = query.Where(filter);
 		}
 		return await query.CountAsync();
-	}
-
-	public async Task<List<string>> UploadFilesAsync(IEnumerable<IFormFile> files, string uploadPath)
-	{
-		if (files == null || !files.Any())
-		{
-			throw new ArgumentException("No files provided for upload.");
-		}
-		List<string> fileNames = new List<string>();
-		try
-		{
-			foreach (IFormFile file in files)
-			{
-				if (file.Length > 0)
-				{
-					if (!Directory.Exists(uploadPath))
-					{
-						Directory.CreateDirectory(uploadPath);
-					}
-					string uniqueFileName = Guid.NewGuid().ToString() + Path.GetExtension(file.FileName);
-					string filePath = Path.Combine(uploadPath, uniqueFileName);
-					using (FileStream stream = new FileStream(filePath, FileMode.Create))
-					{
-						await file.CopyToAsync(stream);
-					}
-					fileNames.Add(uniqueFileName);
-				}
-			}
-			return fileNames;
-		}
-		catch (Exception innerException)
-		{
-			foreach (string fileName in fileNames)
-			{
-				string filePath2 = Path.Combine(uploadPath, fileName);
-				if (File.Exists(filePath2))
-				{
-					File.Delete(filePath2);
-				}
-			}
-			throw new InvalidOperationException("Error occurred while uploading files", innerException);
-		}
 	}
 }

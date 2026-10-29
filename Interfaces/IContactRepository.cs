@@ -8,5 +8,5 @@ namespace cashbook.Interfaces;
 
 public interface IContactRepository : IRepository<Contact>
 {
-	Task<PaginatedResponse<ContactDto>> GetContactsAsync(Guid businessId, int? skip = 1, int? take = 25, string search = null);
+	Task<PaginatedResponse<ContactDto>> GetContactsAsync(Guid businessId, int? skip = 1, int? take = 25, string? search = null);
 }

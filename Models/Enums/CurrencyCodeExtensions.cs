@@ -14,9 +14,6 @@ public static class CurrencyCodeExtensions
 			return false;
 		}
 		string text = value.Trim().ToUpperInvariant();
-		if (1 == 0)
-		{
-		}
 		string text2;
 		switch (text)
 		{
@@ -36,9 +33,6 @@ public static class CurrencyCodeExtensions
 		default:
 			text2 = text;
 			break;
-		}
-		if (1 == 0)
-		{
 		}
 		text = text2;
 		return Enum.TryParse<CurrencyCode>(text, ignoreCase: true, out currency);

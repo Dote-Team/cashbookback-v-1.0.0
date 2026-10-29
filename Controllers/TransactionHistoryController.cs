@@ -1,119 +1,94 @@
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
-using AutoMapper;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Swashbuckle.AspNetCore.Annotations;
+using Microsoft.EntityFrameworkCore;
+using cashbook.Data;
 using cashbook.Dto;
-using cashbook.Dto.transactionHistory;
 using cashbook.Helper;
 using cashbook.Interfaces;
+using cashbook.Services;
 
 namespace cashbook.Controllers;
 
+/// <summary>سجل تغييرات القيود: من أضاف، ومن عدّل المبلغ من كم إلى كم، ومن أرشف.</summary>
 [Route("API/[Controller]")]
-[ApiController]
-public class TransactionHistoryController : ControllerBase
+[Authorize]
+public class TransactionHistoryController : ApiControllerBase
 {
-	protected APIResponse _response;
-
-	private readonly IMapper _mapper;
-
 	private readonly ITransactionHistoryRepository _transactionHistoryRepository;
 
-	public TransactionHistoryController(ITransactionHistoryRepository transactionHistoryRepository, IMapper mapper)
+	private readonly IPermissionService _permissions;
+
+	private readonly ApplicationDbContext _context;
+
+	public TransactionHistoryController(ITransactionHistoryRepository transactionHistoryRepository, IPermissionService permissions, ApplicationDbContext context)
 	{
 		_transactionHistoryRepository = transactionHistoryRepository;
-		_mapper = mapper;
-		_response = new APIResponse();
+		_permissions = permissions;
+		_context = context;
 	}
 
+	/// <summary>سجل تغييرات قيود خزنة</summary>
+	/// <remarks>
+	/// **الصلاحية:** history.view على الخزنة.
+	///
+	/// كل إضافة (POST) وتعديل (PUT) وأرشفة (ARCHIVE) واستيراد (IMPORT)، مع المبلغ قبل وبعد واسم من نفّذ.
+	/// </remarks>
+	/// <param name="bookId">معرّف الخزنة.</param>
+	/// <param name="businessId">للتوافق مع الواجهة فقط.</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
+	/// <response code="404">الخزنة غير موجودة.</response>
 	[HttpGet("ByBook")]
-	[Authorize]
-	[ProducesResponseType(403)]
-	[ProducesResponseType(401)]
-	[ProducesResponseType(200)]
-	[SwaggerOperation(null, null, Summary = "Get all transaction histories by BookId")]
 	public async Task<ActionResult<APIResponse>> GetAllByBookId([FromQuery] Guid bookId, [FromQuery] Guid businessId)
 	{
-		try
+		if (CallerId is not Guid callerId)
 		{
-			string[] allowedRoles = Roles.TransactionRead;
-			string userIdStr = base.User.FindFirst("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier")?.Value;
-			if (!Guid.TryParse(userIdStr, out var userId))
-			{
-				_response.StatusCode = HttpStatusCode.Unauthorized;
-				_response.IsSuccess = false;
-				_response.ErrorMessages = new List<string> { "Invalid user ID." };
-				return Unauthorized(_response);
-			}
-			string userRole = await _transactionHistoryRepository.GetUserRoleAsync(userId, businessId);
-			if (string.IsNullOrEmpty(userRole) || !Enumerable.Contains(allowedRoles, userRole.ToLower()))
-			{
-				_response.StatusCode = HttpStatusCode.Forbidden;
-				_response.IsSuccess = false;
-				_response.ErrorMessages = new List<string> { "You do not have permission to view transaction history for this book." };
-				return Forbid();
-			}
-			List<TransactionHistoryDto> histories = await _transactionHistoryRepository.GetAllByBookIdAsync(bookId);
-			_response.Result = histories;
-			_response.StatusCode = HttpStatusCode.OK;
-			_response.IsSuccess = true;
-			return Ok(_response);
+			return NoCaller();
 		}
-		catch (Exception ex)
+		BookAccess access = await _permissions.CheckBookAsync(callerId, bookId, Permissions.HistoryView);
+		if (access.Status != AccessStatus.Granted)
 		{
-			Exception ex2 = ex;
-			_response.IsSuccess = false;
-			_response.StatusCode = HttpStatusCode.InternalServerError;
-			_response.ErrorMessages = new List<string> { ex2.Message };
-			return StatusCode(500, _response);
+			return Denied(access.Status, "لا تملك صلاحية عرض سجل هذه الخزنة.");
 		}
+		return Success(await _transactionHistoryRepository.GetAllByBookIdAsync(bookId));
 	}
 
+	/// <summary>سجل تغييرات قيد واحد</summary>
+	/// <remarks>
+	/// **الصلاحية:** history.view على خزنة القيد.
+	/// </remarks>
+	/// <param name="transactionId">معرّف القيد.</param>
+	/// <param name="businessId">للتوافق مع الواجهة فقط.</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
+	/// <response code="404">السجل غير موجود، أو مؤرشف.</response>
 	[HttpGet("ByTransaction")]
-	[Authorize]
-	[ProducesResponseType(403)]
-	[ProducesResponseType(401)]
-	[ProducesResponseType(200)]
-	[SwaggerOperation(null, null, Summary = "Get all transaction histories by TransactionId")]
 	public async Task<ActionResult<APIResponse>> GetAllByTransactionId([FromQuery] Guid transactionId, [FromQuery] Guid businessId)
 	{
-		try
+		if (CallerId is not Guid callerId)
 		{
-			string[] allowedRoles = Roles.TransactionRead;
-			string userIdStr = base.User.FindFirst("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier")?.Value;
-			if (!Guid.TryParse(userIdStr, out var userId))
-			{
-				_response.StatusCode = HttpStatusCode.Unauthorized;
-				_response.IsSuccess = false;
-				_response.ErrorMessages = new List<string> { "Invalid user ID." };
-				return Unauthorized(_response);
-			}
-			string userRole = await _transactionHistoryRepository.GetUserRoleAsync(userId, businessId);
-			if (string.IsNullOrEmpty(userRole) || !Enumerable.Contains(allowedRoles, userRole.ToLower()))
-			{
-				_response.StatusCode = HttpStatusCode.Forbidden;
-				_response.IsSuccess = false;
-				_response.ErrorMessages = new List<string> { "You do not have permission to view transaction history for this transaction." };
-				return Forbid();
-			}
-			List<TransactionHistoryDto> histories = await _transactionHistoryRepository.GetAllByTransactionIdAsync(transactionId);
-			_response.Result = histories;
-			_response.StatusCode = HttpStatusCode.OK;
-			_response.IsSuccess = true;
-			return Ok(_response);
+			return NoCaller();
 		}
-		catch (Exception ex)
+		// القيد قد يكون مؤرشفاً وسجله ما زال يُعرض، فيُبحث عنه متجاوزاً فلتر الأرشفة.
+		Guid? bookId = await _context.Transactions.IgnoreQueryFilters()
+			.Where(t => t.Id == transactionId)
+			.Select(t => (Guid?)t.BookId)
+			.FirstOrDefaultAsync();
+		if (!bookId.HasValue)
 		{
-			Exception ex2 = ex;
-			_response.IsSuccess = false;
-			_response.StatusCode = HttpStatusCode.InternalServerError;
-			_response.ErrorMessages = new List<string> { ex2.Message };
-			return StatusCode(500, _response);
+			return Fail(HttpStatusCode.NotFound, "القيد غير موجود.");
 		}
+		BookAccess access = await _permissions.CheckBookAsync(callerId, bookId.Value, Permissions.HistoryView);
+		if (access.Status != AccessStatus.Granted)
+		{
+			return Denied(access.Status, "لا تملك صلاحية عرض سجل هذا القيد.");
+		}
+		return Success(await _transactionHistoryRepository.GetAllByTransactionIdAsync(transactionId));
 	}
 }

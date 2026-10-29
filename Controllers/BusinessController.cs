@@ -1,256 +1,210 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
-using AutoMapper;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using Swashbuckle.AspNetCore.Annotations;
 using cashbook.Dto;
 using cashbook.Dto.business;
 using cashbook.Helper;
 using cashbook.Interfaces;
 using cashbook.Models;
+using cashbook.Services;
 
 namespace cashbook.Controllers;
 
+/// <summary>المنشآت (الحافظات الرئيسية). الإنشاء والتعديل والأرشفة للسوبر أدمن فقط، والعرض لكل عضو.</summary>
 [Route("API/[Controller]")]
-[ApiController]
-public class BusinessController : ControllerBase
+[Authorize]
+public class BusinessController : ApiControllerBase
 {
-	protected APIResponse _response;
-
-	private readonly IMapper _mapper;
-
 	private readonly IBusinessRepository _businessRepository;
 
-	public BusinessController(IBusinessRepository businessRepository, IMapper mapper)
+	private readonly IPermissionService _permissions;
+
+	public BusinessController(IBusinessRepository businessRepository, IPermissionService permissions)
 	{
 		_businessRepository = businessRepository;
-		_response = new APIResponse();
-		_mapper = mapper;
+		_permissions = permissions;
 	}
 
+	/// <summary>المنشآت التي أنا عضو فيها</summary>
+	/// <remarks>
+	/// السوبر أدمن يرى كل المنشآت. غيره يرى المنشآت التي له صلاحية على خزنة فيها، ومع كل منشأة خزائنه فقط.
+	/// </remarks>
+	/// <param name="skip">رقم الصفحة، يبدأ من 1.</param>
+	/// <param name="take">عدد السجلات في الصفحة.</param>
+	/// <param name="search">بحث في اسم المنشأة.</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
 	[HttpGet]
-	[Authorize]
-	[ProducesResponseType(403)]
-	[ProducesResponseType(401)]
-	[ProducesResponseType(200)]
-	[SwaggerOperation(null, null, Summary = "all")]
 	public async Task<ActionResult<APIResponse>> GetPaginatedBusinesses([FromQuery] int? skip = 1, [FromQuery] int? take = 25, [FromQuery] string? search = null)
 	{
-		try
+		if (CallerId is not Guid callerId)
 		{
-			PaginatedResponse<BusinessDto> paginatedResponse = await _businessRepository.GetPaginatedBusinessesAsync(base.User, skip, take, search);
-			_response.Result = paginatedResponse;
-			_response.StatusCode = HttpStatusCode.OK;
-			return Ok(_response);
+			return NoCaller();
 		}
-		catch (Exception ex)
+		UserAccessInfo? caller = await _permissions.GetUserAsync(callerId);
+		if (caller == null || !caller.IsActive)
 		{
-			Exception ex2 = ex;
-			_response.IsSuccess = false;
-			_response.StatusCode = HttpStatusCode.InternalServerError;
-			_response.ErrorMessages = new List<string> { ex2.ToString() };
-			return StatusCode(500, _response);
+			return NoCaller();
 		}
+		List<Guid> businessIds = await _permissions.GetBusinessIdsAsync(callerId);
+		List<Guid>? books = caller.IsSuperAdmin ? null : await AccessibleBooksAsync(callerId, businessIds);
+		return Success(await _businessRepository.GetPaginatedBusinessesAsync(businessIds, books, UserLevels.Name(caller.Level), skip, take, search));
 	}
 
+	/// <summary>بيانات منشأة</summary>
+	/// <remarks>
+	/// **الصلاحية:** عضو في المنشأة. الخزائن المعادة هي التي تملك book.view عليها.
+	/// </remarks>
+	/// <param name="id">معرّف المنشأة.</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
+	/// <response code="404">السجل غير موجود، أو مؤرشف.</response>
 	[HttpGet("{id:Guid}", Name = "GetBusiness")]
-	[Authorize]
-	[ProducesResponseType(403)]
-	[ProducesResponseType(401)]
-	[ProducesResponseType(200)]
-	[ProducesResponseType(404)]
-	[ProducesResponseType(400)]
-	[SwaggerOperation(null, null, Summary = "all")]
 	public async Task<ActionResult<APIResponse>> GetBusiness(Guid id)
 	{
-		try
+		if (CallerId is not Guid callerId)
 		{
-			if (id == Guid.Empty)
-			{
-				_response.StatusCode = HttpStatusCode.BadRequest;
-				_response.IsSuccess = false;
-				_response.ErrorMessages = new List<string> { "Invalid business ID." };
-				return BadRequest(_response);
-			}
-			string userIdStr = base.User.FindFirst("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier")?.Value;
-			if (!Guid.TryParse(userIdStr, out var userId))
-			{
-				_response.StatusCode = HttpStatusCode.Unauthorized;
-				_response.IsSuccess = false;
-				_response.ErrorMessages = new List<string> { "Invalid user ID." };
-				return Unauthorized(_response);
-			}
-			if (await _businessRepository.GetUserRoleAsync(userId, id) == null)
-			{
-				_response.StatusCode = HttpStatusCode.Forbidden;
-				_response.IsSuccess = false;
-				_response.ErrorMessages = new List<string> { "You do not have permission to view this business." };
-				return Forbid();
-			}
-			BusinessWithBooksDto business = await _businessRepository.GetBusinessWithBooksDtoByIdAsync(id);
-			if (business == null)
-			{
-				_response.StatusCode = HttpStatusCode.NotFound;
-				_response.IsSuccess = false;
-				_response.ErrorMessages = new List<string> { "Business not found." };
-				return NotFound(_response);
-			}
-			_response.Result = business;
-			_response.StatusCode = HttpStatusCode.OK;
-			return Ok(_response);
+			return NoCaller();
 		}
-		catch (Exception ex)
+		if (!await _permissions.IsBusinessMemberAsync(callerId, id))
 		{
-			Exception ex2 = ex;
-			_response.IsSuccess = false;
-			_response.StatusCode = HttpStatusCode.InternalServerError;
-			_response.ErrorMessages = new List<string> { ex2.Message };
-			return StatusCode(500, _response);
+			return Fail(HttpStatusCode.NotFound, "المنشأة غير موجودة.");
 		}
+		List<Guid>? books = await _permissions.IsSuperAdminAsync(callerId)
+			? null
+			: await _permissions.GetBookIdsAsync(callerId, id, Permissions.BookView);
+		BusinessWithBooksDto? business = await _businessRepository.GetBusinessWithBooksDtoByIdAsync(id, books);
+		return business == null ? Fail(HttpStatusCode.NotFound, "المنشأة غير موجودة.") : Success(business);
 	}
 
+	/// <summary>إنشاء منشأة</summary>
+	/// <remarks>
+	/// **الصلاحية:** السوبر أدمن فقط.
+	///
+	/// بعدها أنشئ خزائنها (POST /API/Book) ثم أدمن لها (POST /API/UserManagement).
+	/// </remarks>
+	/// <param name="createBusinessDto">اسم المنشأة.</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
+	/// <response code="400">بيانات الطلب ناقصة أو غير صالحة. السبب في errorMessages.</response>
 	[HttpPost]
-	[Authorize]
-	[ProducesResponseType(403)]
-	[ProducesResponseType(401)]
-	[ProducesResponseType(201)]
-	[ProducesResponseType(500)]
-	[ProducesResponseType(400)]
-	[SwaggerOperation(null, null, Summary = "all")]
 	public async Task<ActionResult<APIResponse>> CreateBusiness([FromBody] CreateBusinessDto createBusinessDto)
 	{
-		try
+		if (CallerId is not Guid callerId)
 		{
-			if (createBusinessDto == null)
-			{
-				return BadRequest(createBusinessDto);
-			}
-			string userIdstring = base.User.FindFirst("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier")?.Value;
-			if (!Guid.TryParse(userIdstring, out var userId))
-			{
-				return Unauthorized("Invalid user ID in token.");
-			}
-			await _businessRepository.CreateBussinessAsync(createBusinessDto, userId);
-			_response.StatusCode = HttpStatusCode.Created;
-			_response.IsSuccess = true;
-			return _response;
+			return NoCaller();
 		}
-		catch (Exception ex)
+		if (!await _permissions.IsSuperAdminAsync(callerId))
 		{
-			Exception ex2 = ex;
-			_response.IsSuccess = false;
-			_response.ErrorMessages = new List<string> { ex2.ToString() };
+			return Fail(HttpStatusCode.Forbidden, "إنشاء المنشآت للسوبر أدمن فقط.");
 		}
-		return _response;
+		if (createBusinessDto == null || string.IsNullOrWhiteSpace(createBusinessDto.Name))
+		{
+			return Fail(HttpStatusCode.BadRequest, "اسم المنشأة مطلوب.");
+		}
+		Guid id = await _businessRepository.CreateBussinessAsync(createBusinessDto);
+		return Success(new { Id = id }, HttpStatusCode.Created);
 	}
 
+	/// <summary>أرشفة منشأة (لا حذف)</summary>
+	/// <remarks>
+	/// **الصلاحية:** السوبر أدمن فقط.
+	///
+	/// المنشأة وكل خزائنها تختفي من القوائم دون رجعة، وتبقى في الأرشيف. مثل POST /{id}/archive.
+	/// </remarks>
+	/// <param name="id">معرّف المنشأة.</param>
+	/// <param name="reason">سبب الأرشفة (اختياري، يظهر في الأرشيف).</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
+	/// <response code="404">السجل غير موجود، أو مؤرشف.</response>
 	[HttpDelete("{id:Guid}", Name = "DeleteBusiness")]
-	[Authorize]
-	[ProducesResponseType(204)]
-	[ProducesResponseType(404)]
-	[ProducesResponseType(403)]
-	[ProducesResponseType(401)]
-	[ProducesResponseType(400)]
-	[SwaggerOperation(null, null, Summary = "owner")]
-	public async Task<ActionResult<APIResponse>> DeleteBusiness(Guid id)
+	public Task<ActionResult<APIResponse>> DeleteBusiness(Guid id, [FromQuery] string? reason = null) => ArchiveCore(id, reason);
+
+	/// <summary>أرشفة منشأة</summary>
+	/// <remarks>
+	/// **الصلاحية:** السوبر أدمن فقط. دون رجعة.
+	/// </remarks>
+	/// <param name="id">معرّف المنشأة.</param>
+	/// <param name="reason">سبب الأرشفة (اختياري).</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
+	/// <response code="404">السجل غير موجود، أو مؤرشف.</response>
+	[HttpPost("{id:Guid}/archive")]
+	public Task<ActionResult<APIResponse>> ArchiveBusiness(Guid id, [FromQuery] string? reason = null) => ArchiveCore(id, reason);
+
+	private async Task<ActionResult<APIResponse>> ArchiveCore(Guid id, string? reason)
 	{
-		try
+		if (CallerId is not Guid callerId)
 		{
-			string[] allowedRoles = Roles.OwnerOnly;
-			string userIdStr = base.User.FindFirst("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier")?.Value;
-			Guid userId = Guid.Parse(userIdStr);
-			string userRole = await _businessRepository.GetUserRoleAsync(userId, id);
-			if (userRole == null || !Enumerable.Contains(allowedRoles, userRole.ToLower()))
-			{
-				_response.StatusCode = HttpStatusCode.Forbidden;
-				_response.IsSuccess = false;
-				_response.ErrorMessages = new List<string> { "You do not have permission to delete business for this business." };
-				return Forbid();
-			}
-			if (id == Guid.Empty)
-			{
-				_response.IsSuccess = false;
-				_response.StatusCode = HttpStatusCode.BadRequest;
-				_response.ErrorMessages = new List<string> { "Invalid business ID." };
-				return BadRequest(_response);
-			}
-			if (!(await _businessRepository.DeleteBusinessAsync(id)))
-			{
-				_response.IsSuccess = false;
-				_response.StatusCode = HttpStatusCode.NotFound;
-				_response.ErrorMessages = new List<string> { "Business not found." };
-				return NotFound(_response);
-			}
-			_response.IsSuccess = true;
-			_response.StatusCode = HttpStatusCode.NoContent;
-			return Ok(_response);
+			return NoCaller();
 		}
-		catch (DbUpdateException)
+		if (!await _permissions.IsSuperAdminAsync(callerId))
 		{
-			// حذف منشأة تحتوي خزائن أو أعضاء أو بيانات مرجعية يخالف قيود المفاتيح الأجنبية.
-			// الرمز الصحيح تعارض (409)، ورسالة Entity Framework الخام لا تصلح للعميل.
-			_response.IsSuccess = false;
-			_response.StatusCode = HttpStatusCode.Conflict;
-			_response.ErrorMessages = new List<string>
-			{
-				"لا يمكن حذف المنشأة لارتباطها ببيانات أخرى: احذف خزائنها وأعضائها وبياناتها المرجعية أولاً."
-			};
-			return StatusCode(StatusCodes.Status409Conflict, _response);
+			return Fail(HttpStatusCode.Forbidden, "أرشفة المنشآت للسوبر أدمن فقط.");
 		}
-		catch (Exception ex)
+		if (!await _businessRepository.ArchiveBusinessAsync(id, callerId, reason))
 		{
-			Exception ex2 = ex;
-			_response.IsSuccess = false;
-			_response.StatusCode = HttpStatusCode.InternalServerError;
-			_response.ErrorMessages = new List<string> { ex2.Message };
-			return StatusCode(500, _response);
+			return Fail(HttpStatusCode.NotFound, "المنشأة غير موجودة.");
 		}
+		return Success(new { archived = true });
 	}
 
+	/// <summary>تعديل اسم منشأة</summary>
+	/// <remarks>
+	/// **الصلاحية:** السوبر أدمن فقط.
+	/// </remarks>
+	/// <param name="id">معرّف المنشأة.</param>
+	/// <param name="updateBusinessDto">الاسم الجديد.</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
+	/// <response code="400">بيانات الطلب ناقصة أو غير صالحة. السبب في errorMessages.</response>
+	/// <response code="404">السجل غير موجود، أو مؤرشف.</response>
 	[HttpPut("{id:Guid}", Name = "UpdateBusiness")]
-	[Authorize]
-	[ProducesResponseType(204)]
-	[ProducesResponseType(200)]
-	[ProducesResponseType(400)]
-	[SwaggerOperation(null, null, Summary = "owner")]
 	public async Task<ActionResult<APIResponse>> UpdateBusiness([FromRoute] Guid id, [FromBody] UpdateBusinessDto updateBusinessDto)
 	{
-		try
+		if (CallerId is not Guid callerId)
 		{
-			string[] allowedRoles = Roles.OwnerOnly;
-			string userIdStr = base.User.FindFirst("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier")?.Value;
-			Guid userId = Guid.Parse(userIdStr);
-			string userRole = await _businessRepository.GetUserRoleAsync(userId, id);
-			if (userRole == null || !Enumerable.Contains(allowedRoles, userRole.ToLower()))
-			{
-				_response.StatusCode = HttpStatusCode.Forbidden;
-				_response.IsSuccess = false;
-				_response.ErrorMessages = new List<string> { "You do not have permission to update business for this business." };
-				return Forbid();
-			}
-			Business existingBusiness = await _businessRepository.GetAsync((Business u) => u.Id == id);
-			_mapper.Map(updateBusinessDto, existingBusiness);
-			if (updateBusinessDto == null || existingBusiness == null)
-			{
-				return BadRequest();
-			}
-			await _businessRepository.UpdateAsync(existingBusiness);
-			_response.Result = existingBusiness;
-			_response.StatusCode = HttpStatusCode.NoContent;
-			_response.IsSuccess = true;
-			return Ok(_response);
+			return NoCaller();
 		}
-		catch (Exception ex)
+		if (!await _permissions.IsSuperAdminAsync(callerId))
 		{
-			Exception ex2 = ex;
-			_response.IsSuccess = false;
-			_response.ErrorMessages = new List<string> { ex2.ToString() };
+			return Fail(HttpStatusCode.Forbidden, "تعديل المنشآت للسوبر أدمن فقط.");
 		}
-		return _response;
+		Business? business = await _businessRepository.GetAsync(b => b.Id == id);
+		if (business == null)
+		{
+			return Fail(HttpStatusCode.NotFound, "المنشأة غير موجودة.");
+		}
+		if (!string.IsNullOrWhiteSpace(updateBusinessDto?.Name))
+		{
+			business.Name = updateBusinessDto.Name.Trim();
+		}
+		business.UpdatedAt = DateTime.UtcNow;
+		await _businessRepository.UpdateAsync(business);
+		return Success(new BusinessDto
+		{
+			Id = business.Id,
+			Name = business.Name,
+			CreatedAt = business.CreatedAt,
+			UpdatedAt = business.UpdatedAt
+		});
+	}
+
+	private async Task<List<Guid>> AccessibleBooksAsync(Guid userId, List<Guid> businessIds)
+	{
+		List<Guid> books = new List<Guid>();
+		foreach (Guid businessId in businessIds)
+		{
+			books.AddRange(await _permissions.GetBookIdsAsync(userId, businessId, Permissions.BookView));
+		}
+		return books;
 	}
 }

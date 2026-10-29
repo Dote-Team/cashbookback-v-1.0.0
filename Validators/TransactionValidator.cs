@@ -65,12 +65,12 @@ public static class TransactionValidator
 		{
 			list.Add("العملة غير مدعومة — القيم المقبولة: USD (دولار) أو IQD (دينار).");
 		}
-		string text = TransactionTypes.Normalize(type);
+		string? text = TransactionTypes.Normalize(type);
 		if (text == null)
 		{
 			list.Add("نوع الحركة غير معروف — القيم المقبولة: إدخال/إيداع (cash in) أو إخراج/سحب (cash out).");
 		}
-		if (!MoneyMath.TryValidateAmount(amount, currency, out string error))
+		if (!MoneyMath.TryValidateAmount(amount, currency, out string? error))
 		{
 			list.Add(error);
 		}
@@ -78,7 +78,7 @@ public static class TransactionValidator
 		{
 			case CurrencyCode.USD:
 				{
-					if (!MoneyMath.TryValidateRate(exchangeRate, out string error2))
+					if (!MoneyMath.TryValidateRate(exchangeRate, out string? error2))
 					{
 						list.Add(error2);
 					}

@@ -47,7 +47,12 @@
      وتُحذف بالربط عبر BookId لا بالمعرّف.
 
    ملاحظة: كلمة مرور كل المستخدمين التجريبيين هي نفس كلمة مرور المستخدم
-   المالك (@OwnerUsername) — تُنسخ بصمة bcrypt نفسها.
+   المالك (@OwnerUsername) — تُنسخ بصمة bcrypt نفسها. إن لم يكن المالك موجوداً
+   يُنشأ بكلمة مرور السوبر أدمن (root)، فتصبح كلمة مرور الجميع كلمة مرور root.
+
+   على قاعدة جديدة: شغّل الـ API مرة واحدة أولاً (ينشئ القاعدة وحساب root)، ثم هذا
+   السكربت. في آخره تُحوَّل الأدوار القديمة إلى صلاحيات الخزائن (UserWalletPermissions):
+   owner و partner يصبحان أدمن بكل الصلاحيات، والبقية مستخدمين بصلاحيات أدوارهم.
    ========================================================================== */
 
 SET NOCOUNT ON;
@@ -70,9 +75,18 @@ DECLARE @OwnerId uniqueidentifier = (SELECT Id FROM Users WHERE Username = @Owne
 DECLARE @PwdHash nvarchar(400) = (SELECT Password FROM Users WHERE Username = @OwnerUsername);
 DECLARE @msg     nvarchar(2048);
 
-IF @OwnerId IS NULL OR @PwdHash IS NULL
+DECLARE @CreateOwner bit = 0;
+IF @OwnerId IS NULL
 BEGIN
-    SET @msg = N'المستخدم «' + @OwnerUsername + N'» غير موجود. سجّل حساباً أولاً (POST /API/User/register) ثم أعد تشغيل السكربت، أو غيّر قيمة @OwnerUsername في أعلى الملف.';
+    -- المالك غير موجود: يُنشأ داخل المعاملة بكلمة مرور السوبر أدمن.
+    SET @PwdHash = (SELECT TOP 1 Password FROM Users WHERE IsSuperAdmin = 1 ORDER BY CreatedAt);
+    SET @OwnerId = 'C0000000-0000-4000-8000-000000000000';
+    SET @CreateOwner = 1;
+END
+
+IF @PwdHash IS NULL
+BEGIN
+    SET @msg = N'لا يوجد المستخدم «' + @OwnerUsername + N'» ولا سوبر أدمن. شغّل الـ API مرة واحدة مع AdminUser__Username و AdminUser__Password في .env ثم أعد تشغيل السكربت.';
     ; THROW 50000, @msg, 1;
 END
 
@@ -167,6 +181,10 @@ BEGIN TRY
       (6, 'C0000000-0000-4000-8000-000000000006', N'demo6', N'عمر الدليمي'),
       (7, 'C0000000-0000-4000-8000-000000000007', N'demo7', N'ياسر الجميلي'),
       (8, 'C0000000-0000-4000-8000-000000000008', N'demo8', N'نور التميمي');
+
+    IF @CreateOwner = 1
+        INSERT INTO Users (Id, Name, Username, Email, Password, CreatedAt, UpdatedAt, ProfileImage, IsSuperAdmin)
+        VALUES (@OwnerId, N'مالك المنشآت التجريبية', @OwnerUsername, @OwnerUsername + N'@' + @DemoEmailHost, @PwdHash, DATEADD(DAY, -420, @Now), DATEADD(DAY, -420, @Now), NULL, 0);
 
     INSERT INTO Users (Id, Name, Username, Email, Password, CreatedAt, UpdatedAt, ProfileImage, IsSuperAdmin)
     SELECT u.Id, u.Name, u.Username,
@@ -439,6 +457,77 @@ BEGIN TRY
                  ORDER BY f.Id) cf
     WHERE t.BookId IN (SELECT Id FROM @bk)
       AND ABS(CAST(CHECKSUM(t.Id) AS bigint)) % 100 < 12;
+
+    ----------------------------------------------------------------------
+    -- 9) الأدوار القديمة ← صلاحيات الخزائن، للمنشآت التجريبية وحدها
+    --    (القواعد نفسها التي استُخدمت عند ترقية البيانات القديمة)
+    ----------------------------------------------------------------------
+    DECLARE @map TABLE (Role nvarchar(50), Permission nvarchar(64), AllBooks bit);
+    INSERT INTO @map (Role, Permission, AllBooks)
+    SELECT r.Role, p.Permission, 1
+    FROM (VALUES ('owner'), ('partner')) r(Role)
+    CROSS JOIN (VALUES ('book.view'), ('book.edit'), ('book.archive'), ('transaction.view'), ('transaction.create'),
+        ('transaction.edit'), ('transaction.archive'), ('transaction.duplicate'), ('transaction.export'), ('history.view'),
+        ('category.manage'), ('contact.manage'), ('payment_method.manage'), ('custom_field.manage'),
+        ('exchange_rate.manage'), ('backup.import'), ('archive.view'), ('users.manage')) p(Permission);
+    INSERT INTO @map (Role, Permission, AllBooks) VALUES
+        ('viewer', 'book.view', 1), ('viewer', 'transaction.view', 1), ('viewer', 'history.view', 1),
+        ('viewer', 'transaction.export', 1), ('viewer', 'archive.view', 1);
+    INSERT INTO @map (Role, Permission, AllBooks)
+    SELECT r.Role, p.Permission, 0
+    FROM (VALUES ('admin'), ('staff'), ('dataoperator')) r(Role)
+    CROSS JOIN (VALUES ('book.view'), ('transaction.view'), ('transaction.create'), ('transaction.duplicate'), ('custom_field.manage')) p(Permission);
+    INSERT INTO @map (Role, Permission, AllBooks) VALUES
+        ('privateviewer', 'book.view', 0), ('privateviewer', 'transaction.view', 0), ('privateviewer', 'transaction.duplicate', 0),
+        ('portfolio_manager', 'book.view', 0), ('portfolio_manager', 'transaction.duplicate', 0), ('portfolio_manager', 'exchange_rate.manage', 0);
+
+    INSERT INTO UserWalletPermissions (Id, UserId, BookId, Permission, GrantedByUserId, GrantedAt)
+    SELECT NEWID(), x.UserId, x.BookId, x.Permission, NULL, SYSUTCDATETIME()
+    FROM (
+        SELECT bu.UserId, b.Id AS BookId, m.Permission
+        FROM BusinessUsers bu
+        JOIN @map m ON m.Role = LOWER(bu.Role) AND m.AllBooks = 1
+        JOIN Books b ON b.BusinessId = bu.BusinessId
+        WHERE bu.BusinessId IN (SELECT Id FROM @biz)
+        UNION
+        SELECT bu.UserId, b.Id, m.Permission
+        FROM BusinessUsers bu
+        JOIN @map m ON m.Role = LOWER(bu.Role) AND m.AllBooks = 0
+        CROSS APPLY OPENJSON(CASE WHEN ISJSON(bu.BookIds) = 1 THEN bu.BookIds ELSE '[]' END) j
+        JOIN Books b ON b.Id = TRY_CAST(j.value AS uniqueidentifier) AND b.BusinessId = bu.BusinessId
+        WHERE bu.BusinessId IN (SELECT Id FROM @biz)
+    ) x
+    WHERE NOT EXISTS (SELECT 1 FROM Users u WHERE u.Id = x.UserId AND u.IsSuperAdmin = 1);
+
+    DECLARE @demoUsers TABLE (Id uniqueidentifier PRIMARY KEY);
+    INSERT INTO @demoUsers (Id)
+    SELECT DISTINCT bu.UserId FROM BusinessUsers bu
+    JOIN Users u ON u.Id = bu.UserId AND u.IsSuperAdmin = 0
+    WHERE bu.BusinessId IN (SELECT Id FROM @biz);
+
+    DECLARE @superAdmin uniqueidentifier = (SELECT TOP 1 Id FROM Users WHERE IsSuperAdmin = 1 ORDER BY CreatedAt);
+    UPDATE u SET Level = CASE WHEN EXISTS (SELECT 1 FROM BusinessUsers bu WHERE bu.UserId = u.Id
+                                           AND bu.BusinessId IN (SELECT Id FROM @biz) AND LOWER(bu.Role) IN ('owner', 'partner'))
+                              THEN 2 ELSE 3 END
+    FROM Users u WHERE u.Id IN (SELECT Id FROM @demoUsers);
+    UPDATE Users SET ParentUserId = @superAdmin WHERE Level = 2 AND Id IN (SELECT Id FROM @demoUsers);
+    UPDATE u SET ParentUserId = (
+        SELECT TOP 1 o.UserId
+        FROM BusinessUsers mine
+        JOIN BusinessUsers o ON o.BusinessId = mine.BusinessId AND LOWER(o.Role) IN ('owner', 'partner')
+        WHERE mine.UserId = u.Id AND mine.BusinessId IN (SELECT Id FROM @biz)
+        ORDER BY CASE LOWER(o.Role) WHEN 'owner' THEN 0 ELSE 1 END, o.Id)
+    FROM Users u WHERE u.Level = 3 AND u.Id IN (SELECT Id FROM @demoUsers);
+
+    -- العضويات تأخذ أسماء الأدوار الجديدة، وBookIds تطابق الخزائن الممنوحة فعلاً.
+    UPDATE bu SET
+        Role = CASE u.Level WHEN 2 THEN 'admin' ELSE 'user' END,
+        BookIds = ISNULL((
+            SELECT '[' + STRING_AGG('"' + LOWER(CAST(d.BookId AS nvarchar(36))) + '"', ',') + ']'
+            FROM (SELECT DISTINCT p.BookId FROM UserWalletPermissions p JOIN Books b ON b.Id = p.BookId
+                  WHERE p.UserId = bu.UserId AND b.BusinessId = bu.BusinessId) d), '[]')
+    FROM BusinessUsers bu JOIN Users u ON u.Id = bu.UserId
+    WHERE bu.BusinessId IN (SELECT Id FROM @biz);
 
     COMMIT TRANSACTION;
     PRINT N'--- تم إدخال البيانات بنجاح ---';
