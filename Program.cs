@@ -210,6 +210,7 @@ internal class Program
         builder.Services.AddScoped<IUserManagementService, UserManagementService>();
         builder.Services.AddScoped<ITokenService, TokenService>();
         builder.Services.AddSingleton<IFileStorage, FileStorage>();
+        builder.Services.AddSingleton<ISessionCache, SessionCache>();
         builder.Services.Configure<FingerprintSettings>(builder.Configuration.GetSection("Fingerprint"));
         builder.Services.AddSingleton<IFingerprintMatcher>(delegate (IServiceProvider sp)
         {
@@ -241,6 +242,7 @@ internal class Program
         builder.Services.AddScoped<IAuditLogRepository, AuditLogRepository>();
         builder.Services.AddHostedService<AuditWriterService>();
         builder.Services.AddHostedService<AuditRetentionService>();
+        builder.Services.AddHostedService<SessionCleanupService>();
         builder.Services.AddSingleton<ILoginThrottle, LoginThrottle>();
         // حد عام لجسم الطلب يكفي لعدة مرفقات. مسارات النسخ الاحتياطي وحدها ترفعه إلى 200MB
         // عبر [RequestSizeLimit]، فلا يستطيع أي مسار آخر استهلاك ذاكرة الخادم بطلب ضخم.

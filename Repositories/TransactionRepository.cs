@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
@@ -512,47 +512,36 @@ public class TransactionRepository : Repository<Transaction>, ITransactionReposi
         return rows;
     }
 
+    /// <summary>
+    /// تصدير الخزنة كاملة. الإسقاط يتم في SQL مباشرة، فلا تُحمَّل كيانات القيود وكل علاقاتها
+    /// إلى الذاكرة ثم تُنسخ إلى DTO كما كان (كانت الذاكرة تتضاعف مع الخزائن الكبيرة).
+    /// </summary>
     public async Task<List<TransactionDto>> GetAllTransactionsRawByBookIdAsync(Guid bookId)
     {
-        return (await (from t in (from t in _context.Transactions.AsNoTracking().AsSplitQuery()
-                                  where t.BookId == bookId
-                                  select t).Include((Transaction t) => t.Category).Include((Transaction t) => t.Contact).Include((Transaction t) => t.User)
-                .Include((Transaction t) => t.CustomFieldValues)
-                .ThenInclude((CustomFieldValue cf) => cf.CustomField)
-                       orderby t.Date descending
-                       select t).ToListAsync()).Select((Transaction t) => new TransactionDto
-                       {
-                           Type = t.Type,
-                           Amount = t.Amount,
-                           Currency = t.Currency,
-                           ExchangeRate = t.ExchangeRate,
-                           ExchangeDate = t.ExchangeDate,
-                           Date = t.Date,
-                           Description = t.Description,
-                           Category = ((t.Category == null) ? null : new CategoryDto
-                           {
-                               Name = t.Category.Name
-                           }),
-                           User = ((t.User == null) ? null : new UserDto
-                           {
-                               Name = t.User.Name,
-                               Email = t.User.Email
-                           }),
-                           Contact = ((t.Contact == null) ? null : new ContactDto
-                           {
-                               Name = t.Contact.Name,
-                               Phone = t.Contact.Phone
-                           }),
-                           CustomFieldValues = t.CustomFieldValues?.Select((CustomFieldValue cf) => new CustomFieldValueDto
-                           {
-                               Id = cf.Id,
-                               Value = cf.Value,
-                               CustomFields = ((cf.CustomField == null) ? null : new CustomFieldDto
-                               {
-                                   Key = cf.CustomField.Key
-                               })
-                           }).ToList()
-                       }).ToList();
+        return await _context.Transactions.AsNoTracking()
+            .Where(t => t.BookId == bookId)
+            .OrderByDescending(t => t.Date)
+            .Select(t => new TransactionDto
+            {
+                Type = t.Type,
+                Amount = t.Amount,
+                Currency = t.Currency,
+                ExchangeRate = t.ExchangeRate,
+                ExchangeDate = t.ExchangeDate,
+                Date = t.Date,
+                Description = t.Description,
+                Category = t.Category == null ? null : new CategoryDto { Name = t.Category.Name },
+                User = t.User == null ? null : new UserDto { Name = t.User.Name, Email = t.User.Email },
+                Contact = t.Contact == null ? null : new ContactDto { Name = t.Contact.Name, Phone = t.Contact.Phone },
+                CustomFieldValues = t.CustomFieldValues.Select(cf => new CustomFieldValueDto
+                {
+                    Id = cf.Id,
+                    Value = cf.Value,
+                    CustomFields = cf.CustomField == null ? null : new CustomFieldDto { Key = cf.CustomField.Key }
+                }).ToList()
+            })
+            .AsSplitQuery()
+            .ToListAsync();
     }
 
     public async Task<bool> UpdateTransactionAsync(UpdateTransactionDto dto, Guid Id, Guid editorUserId)

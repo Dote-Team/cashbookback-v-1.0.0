@@ -58,10 +58,13 @@ public sealed class UserManagementService : IUserManagementService
 
 	private readonly IPermissionService _permissions;
 
-	public UserManagementService(ApplicationDbContext context, IPermissionService permissions)
+	private readonly ISessionCache _sessionCache;
+
+	public UserManagementService(ApplicationDbContext context, IPermissionService permissions, ISessionCache sessionCache)
 	{
 		_context = context;
 		_permissions = permissions;
+		_sessionCache = sessionCache;
 	}
 
 	public async Task<bool> CanManageAsync(Guid callerId, Guid targetId)
@@ -249,6 +252,7 @@ public sealed class UserManagementService : IUserManagementService
 		}
 		_context.Sessions.RemoveRange(await _context.Sessions.Where(s => affected.Contains(s.UserId)).ToListAsync());
 		await _context.SaveChangesAsync();
+		_sessionCache.InvalidateUsers(affected);
 		_permissions.Invalidate();
 		return ServiceResult.Success(new { deactivated = affected.Count });
 	}
@@ -292,6 +296,7 @@ public sealed class UserManagementService : IUserManagementService
 		user.UpdatedAt = DateTime.UtcNow;
 		_context.Sessions.RemoveRange(await _context.Sessions.Where(s => s.UserId == targetId).ToListAsync());
 		await _context.SaveChangesAsync();
+		_sessionCache.InvalidateUsers(new[] { targetId });
 		return ServiceResult.Success();
 	}
 

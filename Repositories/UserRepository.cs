@@ -23,12 +23,15 @@ public class UserRepository : Repository<User>, IUserRepository, IRepository<Use
 
 	private readonly IFileStorage _files;
 
-	public UserRepository(ApplicationDbContext context, ITokenService tokens, IFileStorage files)
+	private readonly ISessionCache _sessionCache;
+
+	public UserRepository(ApplicationDbContext context, ITokenService tokens, IFileStorage files, ISessionCache sessionCache)
 		: base(context)
 	{
 		_context = context;
 		_tokens = tokens;
 		_files = files;
+		_sessionCache = sessionCache;
 	}
 
 	// ملاحظة مهمّة: هذه الدوال لا تبتلع الاستثناءات عمداً.
@@ -175,6 +178,7 @@ public class UserRepository : Repository<User>, IUserRepository, IRepository<Use
 		}
 		_context.Sessions.Remove(session);
 		await _context.SaveChangesAsync();
+		_sessionCache.InvalidateSession(sessionId);
 		return true;
 	}
 }

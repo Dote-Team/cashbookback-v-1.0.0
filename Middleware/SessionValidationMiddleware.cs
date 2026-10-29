@@ -25,7 +25,7 @@ public class SessionValidationMiddleware
         _next = next;
     }
 
-    public async Task InvokeAsync(HttpContext context, ApplicationDbContext dbContext)
+    public async Task InvokeAsync(HttpContext context, ApplicationDbContext dbContext, ISessionCache sessionCache)
     {
         if (context.User.Identity?.IsAuthenticated == true)
         {
@@ -47,10 +47,19 @@ public class SessionValidationMiddleware
                 return;
             }
 
-            var session = await dbContext.Sessions
-                .Where(s => s.Id == sessionId && s.UserId == userId)
-                .Select(s => new { s.Id, s.ExpiredAt, s.DeviceToken, UserActive = s.User.IsActive })
-                .FirstOrDefaultAsync();
+            // من الذاكرة إن قُرئت الجلسة قبل لحظات، وإلا من قاعدة البيانات. انظر SessionCache.
+            CachedSession? session = sessionCache.Get(sessionId, userId);
+            if (session == null)
+            {
+                session = await dbContext.Sessions
+                    .Where(s => s.Id == sessionId && s.UserId == userId)
+                    .Select(s => new CachedSession(s.Id, s.UserId, s.ExpiredAt, s.DeviceToken, s.User.IsActive))
+                    .FirstOrDefaultAsync();
+                if (session != null)
+                {
+                    sessionCache.Set(session);
+                }
+            }
 
             if (session == null || session.ExpiredAt < DateTime.UtcNow || !session.UserActive)
             {
@@ -68,7 +77,7 @@ public class SessionValidationMiddleware
             if (AuditScope.Current is { } audit)
             {
                 audit.DeviceToken = session.DeviceToken;
-                audit.SessionId = session.Id;
+                audit.SessionId = session.SessionId;
             }
         }
 
