@@ -19,4 +19,9 @@
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="8.0.1" />
   </ItemGroup>
 
+  <!-- ملفات التثبيت تُنسخ بجانب البرنامج عند النشر. -->
+  <ItemGroup>
+    <None Include="scripts\*.cmd" CopyToPublishDirectory="PreserveNewest" Link="%(Filename)%(Extension)" />
+  </ItemGroup>
+
 </Project>

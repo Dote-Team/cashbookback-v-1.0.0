@@ -10,18 +10,22 @@
 
 1. **ثبّت تعريف القارئ** من ZKTeco (ZKFinger SDK for Windows). هذا يضع `libzkfp.dll` (نسخة 64-bit) في `C:\Windows\System32`.
 2. **وصّل القارئ**. يجب أن يضيء القارئ وأن يظهر في مدير الأجهزة.
-3. **ابنِ البرنامج** على جهاز التطوير:
-   ```
-   dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish
-   ```
-   ثم انسخ مجلد `publish` إلى جهاز المستخدم، مثلاً إلى `C:\CashbookBridge`.
-4. **اضبط `appsettings.json`** بجانب الملف التنفيذي: ضع عنوان الواجهة الفعلي في `AllowedOrigins`. لا يقبل البرنامج أي صفحة غير مدرجة هنا.
-5. **جرّبه**: شغّل `CashbookFingerprintBridge.exe`، ثم افتح `http://127.0.0.1:52181/status` في المتصفح. يجب أن يظهر `"connected": true` مع أبعاد الصورة.
-6. **ثبّته كخدمة** يبدأ تلقائياً مع ويندوز (من موجّه أوامر بصلاحيات المدير):
-   ```
-   sc create CashbookFingerprintBridge binPath= "C:\CashbookBridge\CashbookFingerprintBridge.exe" start= auto
-   sc start CashbookFingerprintBridge
-   ```
+3. **انسخ محتوى `CashbookFingerprintBridge.zip`** إلى مجلد ثابت على الجهاز، مثلاً `C:\CashbookBridge`. البرنامج ملف واحد لا يحتاج تثبيت .NET.
+4. **اضبط `appsettings.json`** في المجلد نفسه: ضع عنوان الواجهة الفعلي في `AllowedOrigins`. لا يقبل البرنامج أي صفحة غير مدرجة هنا.
+5. **ثبّته كخدمة:** زر الفأرة الأيمن على `install-service.cmd` ← **Run as administrator**.
+   - يبدأ تلقائياً مع تشغيل ويندوز، ويعيد تشغيل نفسه إن توقف.
+   - يفتح في النهاية صفحة `http://127.0.0.1:52181/status`. يجب أن يظهر فيها `"connected": true` مع أبعاد الصورة.
+
+| الملف | الوظيفة |
+|---|---|
+| `install-service.cmd` | تثبيت الخدمة أو إعادة تشغيلها (كمسؤول) |
+| `uninstall-service.cmd` | إزالة الخدمة (كمسؤول) |
+| `test-without-device.cmd` | تجربة البرنامج بلا قارئ (وضع المحاكاة). أوقف الخدمة قبله |
+
+لإعادة بناء البرنامج من الكود (على جهاز التطوير):
+```
+dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=none -o publish
+```
 
 ## إعداد الخادم
 
