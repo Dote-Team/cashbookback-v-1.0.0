@@ -28,7 +28,8 @@ public class EnrollFingerprintDto
 
 public class FingerprintLoginDto
 {
-	public string Username { get; set; }
+	/// <summary>اختياري: فارغ = البحث عن صاحب البصمة بين كل المستخدمين.</summary>
+	public string? Username { get; set; }
 
 	public FingerprintSampleDto Sample { get; set; }
 

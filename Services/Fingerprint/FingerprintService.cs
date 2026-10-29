@@ -25,8 +25,11 @@ public interface IFingerprintService
 
 	Task<ServiceResult> ListAsync(Guid callerId, Guid userId);
 
-	/// <summary>مطابقة 1:1: بصمة المستخدم المحدد فقط. يعيد المستخدم عند التطابق، وإلا null.</summary>
-	Task<User?> VerifyAsync(string username, FingerprintSampleDto sample);
+	/// <summary>
+	/// يعيد صاحب البصمة عند التطابق، وإلا null. مع اسم المستخدم: مطابقة 1:1 على بصماته فقط.
+	/// بدونه: بحث 1:N في بصمات كل المستخدمين الفعّالين، ويُرفض إن طابقت أكثر من مستخدم.
+	/// </summary>
+	Task<User?> VerifyAsync(string? username, FingerprintSampleDto sample);
 }
 
 /// <summary>
@@ -192,9 +195,9 @@ public sealed class FingerprintService : IFingerprintService
 		return ServiceResult.Success(items);
 	}
 
-	public async Task<User?> VerifyAsync(string username, FingerprintSampleDto sampleDto)
+	public async Task<User?> VerifyAsync(string? username, FingerprintSampleDto sampleDto)
 	{
-		if (!Available || string.IsNullOrWhiteSpace(username))
+		if (!Available)
 		{
 			return null;
 		}
@@ -203,22 +206,26 @@ public sealed class FingerprintService : IFingerprintService
 		{
 			return null;
 		}
-		string identifier = username.Trim();
-		User? user = await _context.Users.FirstOrDefaultAsync(u => u.Username == identifier || u.Email == identifier);
-		if (user == null || !user.IsActive)
+		IQueryable<UserFingerprint> query = _context.UserFingerprints
+			.Where(f => f.IsActive && f.Algorithm == _matcher.Algorithm && f.User.IsActive);
+		if (!string.IsNullOrWhiteSpace(username))
 		{
-			return null;
+			string identifier = username.Trim();
+			User? owner = await _context.Users.FirstOrDefaultAsync(u => u.Username == identifier || u.Email == identifier);
+			if (owner == null || !owner.IsActive)
+			{
+				return null;
+			}
+			query = query.Where(f => f.UserId == owner.Id);
 		}
-		List<UserFingerprint> fingerprints = await _context.UserFingerprints
-			.Where(f => f.UserId == user.Id && f.IsActive && f.Algorithm == _matcher.Algorithm)
-			.ToListAsync();
+		List<UserFingerprint> fingerprints = await query.ToListAsync();
 		if (fingerprints.Count == 0)
 		{
 			return null;
 		}
 		byte[] probe = _matcher.Extract(sample);
-		UserFingerprint? matched = null;
-		double best = 0;
+		// أعلى درجة لكل مستخدم: في البحث 1:N تطابق مستخدمَين فوق الحد يعني التباساً لا دخولاً.
+		Dictionary<Guid, (UserFingerprint Fingerprint, double Score)> bestPerUser = new Dictionary<Guid, (UserFingerprint, double)>();
 		foreach (UserFingerprint fingerprint in fingerprints)
 		{
 			List<string>? stored;
@@ -234,20 +241,24 @@ public sealed class FingerprintService : IFingerprintService
 			foreach (string template in stored ?? new List<string>())
 			{
 				double score = _matcher.Score(Convert.FromBase64String(template), probe);
-				if (score > best)
+				if (score >= _settings.MatchThreshold && (!bestPerUser.TryGetValue(fingerprint.UserId, out var current) || score > current.Score))
 				{
-					best = score;
-					matched = fingerprint;
+					bestPerUser[fingerprint.UserId] = (fingerprint, score);
 				}
 			}
 		}
-		if (matched == null || best < _settings.MatchThreshold)
+		if (bestPerUser.Count != 1)
 		{
+			if (bestPerUser.Count > 1)
+			{
+				_logger.LogWarning("بصمة طابقت {Count} مستخدمين؛ رُفض الدخول. ارفع Fingerprint__MatchThreshold أو اطلب اسم المستخدم.", bestPerUser.Count);
+			}
 			return null;
 		}
+		UserFingerprint matched = bestPerUser.Values.Single().Fingerprint;
 		matched.LastUsedAt = DateTime.UtcNow;
 		await _context.SaveChangesAsync();
-		return user;
+		return await _context.Users.FirstAsync(u => u.Id == matched.UserId);
 	}
 
 	private (FingerprintSample? Sample, string? Error) Parse(FingerprintSampleDto? dto)

@@ -73,15 +73,16 @@ public class UserController : ApiControllerBase
 	}
 
 	/// <summary>
-	/// الدخول بالبصمة بديلاً عن كلمة المرور: اسم المستخدم + صورة البصمة من البرنامج الوسيط.
-	/// المطابقة 1:1 على بصمات هذا المستخدم فقط، وتمر بحماية المحاولات المتكررة نفسها.
+	/// الدخول بالبصمة بديلاً عن كلمة المرور: صورة البصمة من البرنامج الوسيط، واسم المستخدم اختياري.
+	/// معه: مطابقة 1:1 على بصماته فقط. بدونه: بحث في بصمات الجميع، والحماية من المحاولات
+	/// المتكررة تُحسب حينها على عنوان IP.
 	/// </summary>
 	[HttpPost("login/fingerprint")]
 	public async Task<ActionResult<APIResponse>> LoginWithFingerprint([FromBody] FingerprintLoginDto dto)
 	{
-		if (dto == null || string.IsNullOrWhiteSpace(dto.Username) || dto.Sample == null)
+		if (dto == null || dto.Sample == null)
 		{
-			return Fail(HttpStatusCode.BadRequest, "اسم المستخدم وصورة البصمة مطلوبان.");
+			return Fail(HttpStatusCode.BadRequest, "صورة البصمة مطلوبة.");
 		}
 		if (!_fingerprints.Status().Available)
 		{
