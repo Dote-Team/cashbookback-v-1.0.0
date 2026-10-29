@@ -22,7 +22,7 @@ public interface IUserRepository : IRepository<User>
 
 	Task<LoginResponseDto?> RefreshTokenAsync(string refreshToken);
 
-	Task<PaginatedResponse<UserDto>> GetAllUsersAsync(Guid businessId, int? skip = 1, int? take = 25, string search = null);
+	Task<PaginatedResponse<UserDto>> GetAllUsersAsync(Guid businessId, int? skip = 1, int? take = 25, string? search = null);
 
 	Task<bool> LogoutAsync(ClaimsPrincipal userClaims);
 

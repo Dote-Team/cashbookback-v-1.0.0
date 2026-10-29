@@ -1,7 +1,6 @@
 using System;
 using System.Net;
 using System.Threading.Tasks;
-using AutoMapper;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using cashbook.Dto;
@@ -15,6 +14,8 @@ namespace cashbook.Controllers;
 /// عمليات موحّدة للبيانات المرجعية على مستوى المنشأة. القراءة لكل من له صلاحية على أي خزنة
 /// في المنشأة (يحتاجها لاختيار التصنيف عند إضافة قيد)، والإدارة لمن يملك صلاحية الإدارة.
 /// المنشأة تُستخرج من السجل نفسه عند التعديل والأرشفة، لا من الطلب.
+/// التحويل بين الكيان والـ DTO صريح في كل متحكم: التعديل يغيّر الحقول المرسلة فقط،
+/// ولا يمحو حقلاً لم يُرسل كما كان يفعل AutoMapper.
 /// </summary>
 [Authorize]
 public abstract class BusinessReferenceController<TEntity, TDto, TCreate, TUpdate> : ApiControllerBase
@@ -24,13 +25,10 @@ public abstract class BusinessReferenceController<TEntity, TDto, TCreate, TUpdat
 
 	protected readonly IPermissionService Access;
 
-	protected readonly IMapper Mapper;
-
-	protected BusinessReferenceController(IRepository<TEntity> repository, IPermissionService permissions, IMapper mapper)
+	protected BusinessReferenceController(IRepository<TEntity> repository, IPermissionService permissions)
 	{
 		Repository = repository;
 		Access = permissions;
-		Mapper = mapper;
 	}
 
 	protected abstract string ManagePermission { get; }
@@ -40,6 +38,16 @@ public abstract class BusinessReferenceController<TEntity, TDto, TCreate, TUpdat
 	protected abstract Task<PaginatedResponse<TDto>> ListAsync(Guid businessId, int skip, int take, string? search);
 
 	protected abstract Guid BusinessIdOf(TCreate dto);
+
+	protected abstract TDto ToDto(TEntity entity);
+
+	/// <summary>رسالة الخطأ إن كانت بيانات الإضافة ناقصة، وإلا null.</summary>
+	protected abstract string? ValidateCreate(TCreate dto);
+
+	protected abstract TEntity FromCreate(TCreate dto);
+
+	/// <summary>ينسخ الحقول المرسلة فقط إلى الكيان. المنشأة لا تتغير.</summary>
+	protected abstract void ApplyUpdate(TUpdate dto, TEntity entity);
 
 	[HttpGet]
 	public async Task<ActionResult<APIResponse>> GetPaginated([FromQuery] Guid businessId, [FromQuery] int? skip = 1, [FromQuery] int? take = 25, [FromQuery] string? search = null)
@@ -71,7 +79,7 @@ public abstract class BusinessReferenceController<TEntity, TDto, TCreate, TUpdat
 		{
 			return Fail(HttpStatusCode.Forbidden, "لا تملك صلاحية على هذه المنشأة.");
 		}
-		return Success(Mapper.Map<TDto>(entity));
+		return Success(ToDto(entity));
 	}
 
 	[HttpPost]
@@ -85,11 +93,15 @@ public abstract class BusinessReferenceController<TEntity, TDto, TCreate, TUpdat
 		{
 			return Fail(HttpStatusCode.BadRequest, "بيانات غير صالحة.");
 		}
+		if (ValidateCreate(dto) is { } error)
+		{
+			return Fail(HttpStatusCode.BadRequest, error);
+		}
 		if (!await Access.HasInBusinessAsync(callerId, BusinessIdOf(dto), ManagePermission))
 		{
 			return Fail(HttpStatusCode.Forbidden, "لا تملك صلاحية إضافة " + EntityLabel + " في هذه المنشأة.");
 		}
-		TEntity entity = Mapper.Map<TEntity>(dto);
+		TEntity entity = FromCreate(dto);
 		await Repository.CreateAsync(entity);
 		return Success(new { entity.Id }, HttpStatusCode.Created);
 	}
@@ -114,13 +126,10 @@ public abstract class BusinessReferenceController<TEntity, TDto, TCreate, TUpdat
 		{
 			return Fail(HttpStatusCode.Forbidden, "لا تملك صلاحية تعديل " + EntityLabel + ".");
 		}
-		Guid businessId = entity.BusinessId;
-		Mapper.Map(dto, entity);
-		// التعديل لا ينقل السجل إلى منشأة أخرى.
-		entity.BusinessId = businessId;
+		ApplyUpdate(dto, entity);
 		entity.UpdatedAt = DateTime.UtcNow;
 		await Repository.UpdateAsync(entity);
-		return Success(Mapper.Map<TDto>(entity));
+		return Success(ToDto(entity));
 	}
 
 	/// <summary>لا حذف في النظام: هذا المسار يؤرشف السجل دون رجعة. السبب اختياري.</summary>

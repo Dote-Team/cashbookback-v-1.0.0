@@ -21,23 +21,7 @@ public class ApiErrorSanitizerFilter : IAsyncResultFilter, IFilterMetadata
 
 	public async Task OnResultExecutionAsync(ResultExecutingContext context, ResultExecutionDelegate next)
 	{
-		APIResponse response = default(APIResponse);
-		int num;
-		if (context.Result is ObjectResult objectResult)
-		{
-			object value = objectResult.Value;
-			response = value as APIResponse;
-			if (response != null)
-			{
-				List<string> errorMessages = response.ErrorMessages;
-				num = ((errorMessages != null && errorMessages.Count > 0) ? 1 : 0);
-				goto IL_0062;
-			}
-		}
-		num = 0;
-		goto IL_0062;
-		IL_0062:
-		if (num != 0)
+		if (context.Result is ObjectResult { Value: APIResponse response } && response.ErrorMessages is { Count: > 0 })
 		{
 			List<string> sanitized = null;
 			for (int i = 0; i < response.ErrorMessages.Count; i++)

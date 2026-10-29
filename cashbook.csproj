@@ -4,7 +4,7 @@
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <NoWarn>$(NoWarn);CS0105;CS8618;CS8603;CS8604;CS8601;CS8602;CS8600;CS8073;CS1998;CS0168;CS0219</NoWarn>
+    <NoWarn>$(NoWarn);CS8618;CS8603;CS8604;CS8601;CS8602;CS8600</NoWarn>
     <!--
       الأسرار تُقرأ من مخزن المستخدم المحلي (تطوير) أو من ملف .env (خادم)،
       ولا تُكتب داخل appsettings.json أبداً.
@@ -14,7 +14,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="AutoMapper" Version="14.0.0" />
     <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.16" />
     <PackageReference Include="Microsoft.AspNetCore.JsonPatch" Version="9.0.5" />
@@ -37,6 +36,8 @@
   <!-- البرنامج الوسيط للبصمة مشروع مستقل يعمل على جهاز المستخدم، لا جزء من الـ API. -->
   <ItemGroup>
     <Compile Remove="tools/**" />
+    <None Remove="tests/**" />
+    <Content Remove="tests/**" />
     <Content Remove="tools/**" />
     <None Remove="tools/**" />
   </ItemGroup>

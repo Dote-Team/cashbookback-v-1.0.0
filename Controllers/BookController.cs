@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Net;
 using System.Threading.Tasks;
-using AutoMapper;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -31,14 +30,11 @@ public class BookController : ApiControllerBase
 
 	private readonly ApplicationDbContext _context;
 
-	private readonly IMapper _mapper;
-
-	public BookController(IBookRepository bookRepository, IPermissionService permissions, ApplicationDbContext context, IMapper mapper)
+	public BookController(IBookRepository bookRepository, IPermissionService permissions, ApplicationDbContext context)
 	{
 		_bookRepository = bookRepository;
 		_permissions = permissions;
 		_context = context;
-		_mapper = mapper;
 	}
 
 	[HttpGet]
@@ -159,7 +155,14 @@ public class BookController : ApiControllerBase
 		}
 		book.UpdatedAt = DateTime.UtcNow;
 		await _context.SaveChangesAsync();
-		return Success(_mapper.Map<BookDto>(book));
+		return Success(new BookDto
+		{
+			Id = book.Id,
+			Name = book.Name,
+			BusinessId = book.BusinessId,
+			CreatedAt = book.CreatedAt,
+			UpdatedAt = book.UpdatedAt
+		});
 	}
 
 	[HttpPatch("{bookId:Guid}/setting")]

@@ -16,7 +16,7 @@ public interface ITransactionRepository : IRepository<Transaction>
 
 	Task<bool> UpdateTransactionAsync(UpdateTransactionDto dto, Guid Id, Guid editorUserId);
 
-	Task<PaginatedResponse<TransactionDto>> GetAllTransactionsByBookIdAsync(Guid bookId, int? skip = 1, int? take = 25, decimal? amount = null, string searchCategory = null, string searchContact = null, string searchPaymentMethod = null, string searchType = null, string searchUser = null, DateTime? startDate = null, DateTime? endDate = null, SortField? sortBy = null, SortDirection? sortDirection = SortDirection.asc);
+	Task<PaginatedResponse<TransactionDto>> GetAllTransactionsByBookIdAsync(Guid bookId, int? skip = 1, int? take = 25, decimal? amount = null, string? searchCategory = null, string? searchContact = null, string? searchPaymentMethod = null, string? searchType = null, string? searchUser = null, DateTime? startDate = null, DateTime? endDate = null, SortField? sortBy = null, SortDirection? sortDirection = SortDirection.asc);
 
 	Task<List<TransactionDto>> GetAllTransactionsRawByBookIdAsync(Guid bookId);
 

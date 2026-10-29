@@ -65,9 +65,8 @@ public sealed class AuditLogMiddleware
 			{
 				await _next(context);
 			}
-			catch (Exception ex)
+			catch (Exception exception)
 			{
-				Exception exception = ex;
 				failure = exception;
 				throw;
 			}
@@ -235,21 +234,8 @@ public sealed class AuditLogMiddleware
 
 	private static bool IsReadableJson(HttpRequest request)
 	{
-		long? contentLength = request.ContentLength;
-		bool flag;
-		if (contentLength.HasValue)
-		{
-			long valueOrDefault = contentLength.GetValueOrDefault();
-			if (valueOrDefault != 0L)
-			{
-				flag = false;
-				goto IL_0024;
-			}
-		}
-		flag = true;
-		goto IL_0024;
-		IL_0024:
-		if (flag)
+		// بلا طول معروف (أو بطول صفر) لا يُقرأ الجسم.
+		if (request.ContentLength is null or 0)
 		{
 			return false;
 		}

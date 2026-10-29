@@ -154,7 +154,7 @@ public class TransactionRepository : Repository<Transaction>, ITransactionReposi
         return true;
     }
 
-    public async Task<PaginatedResponse<TransactionDto>> GetAllTransactionsByBookIdAsync(Guid bookId, int? skip = 1, int? take = 25, decimal? amount = null, string searchCategory = null, string searchContact = null, string searchPaymentMethod = null, string searchType = null, string searchUser = null, DateTime? startDate = null, DateTime? endDate = null, SortField? sortBy = null, SortDirection? sortDirection = SortDirection.asc)
+    public async Task<PaginatedResponse<TransactionDto>> GetAllTransactionsByBookIdAsync(Guid bookId, int? skip = 1, int? take = 25, decimal? amount = null, string? searchCategory = null, string? searchContact = null, string? searchPaymentMethod = null, string? searchType = null, string? searchUser = null, DateTime? startDate = null, DateTime? endDate = null, SortField? sortBy = null, SortDirection? sortDirection = SortDirection.asc)
     {
         int currentPage = Math.Max(1, skip ?? 1);
         int currentSize = Math.Min(take ?? 25, 500);
@@ -206,126 +206,25 @@ public class TransactionRepository : Repository<Transaction>, ITransactionReposi
         string whereSql = "WHERE " + string.Join("\n  AND ", filters);
         // الربط بالجداول الأخرى لا يلزم للعدّ إلا عند البحث بأسمائها.
         bool needsJoins = !string.IsNullOrEmpty(searchCategory) || !string.IsNullOrEmpty(searchContact) || !string.IsNullOrEmpty(searchPaymentMethod) || !string.IsNullOrEmpty(searchUser);
-        string countJoins = needsJoins ? "LEFT JOIN Categories     c  ON c.Id  = t.CategoryId\nLEFT JOIN Contacts       co ON co.Id = t.ContactId\nLEFT JOIN PaymentMethods pm ON pm.Id = t.PaymentMethodId\nLEFT JOIN Users          u  ON u.Id  = t.UserId\n" : string.Empty;
+        const string joinSql = "LEFT JOIN Categories     c  ON c.Id  = t.CategoryId\nLEFT JOIN Contacts       co ON co.Id = t.ContactId\nLEFT JOIN PaymentMethods pm ON pm.Id = t.PaymentMethodId\nLEFT JOIN Users          u  ON u.Id  = t.UserId\n";
+        string countJoins = needsJoins ? joinSql : string.Empty;
         int totalRecords = await ExecuteScalarIntAsync("SELECT COUNT(*) FROM Transactions t \n" + countJoins + whereSql, parameters);
-        if (1 == 0)
+        string direction = sortDirection == SortDirection.asc ? "ASC" : "DESC";
+        bool knownDirection = sortDirection is SortDirection.asc or SortDirection.desc;
+        string orderSql = (knownDirection ? sortBy : null) switch
         {
-        }
-        string text;
-        switch (sortBy)
-        {
-            case SortField.Category:
-                if (sortDirection.HasValue)
-                {
-                    SortDirection valueOrDefault = sortDirection.GetValueOrDefault();
-                    SortDirection sortDirection2 = valueOrDefault;
-                    if (sortDirection2 == SortDirection.asc)
-                    {
-                        text = "c.Name ASC, t.Id ASC";
-                        break;
-                    }
-                    if (sortDirection2 == SortDirection.desc)
-                    {
-                        text = "c.Name DESC, t.Id ASC";
-                        break;
-                    }
-                }
-                goto default;
-            case SortField.PaymentMethod:
-                if (sortDirection.HasValue)
-                {
-                    SortDirection valueOrDefault = sortDirection.GetValueOrDefault();
-                    SortDirection sortDirection2 = valueOrDefault;
-                    if (sortDirection2 == SortDirection.asc)
-                    {
-                        text = "pm.Name ASC, t.Id ASC";
-                        break;
-                    }
-                    if (sortDirection2 == SortDirection.desc)
-                    {
-                        text = "pm.Name DESC, t.Id ASC";
-                        break;
-                    }
-                }
-                goto default;
-            case SortField.Description:
-                if (sortDirection.HasValue)
-                {
-                    SortDirection valueOrDefault = sortDirection.GetValueOrDefault();
-                    SortDirection sortDirection2 = valueOrDefault;
-                    if (sortDirection2 == SortDirection.asc)
-                    {
-                        text = "t.Description ASC, t.Id ASC";
-                        break;
-                    }
-                    if (sortDirection2 == SortDirection.desc)
-                    {
-                        text = "t.Description DESC, t.Id ASC";
-                        break;
-                    }
-                }
-                goto default;
-            case SortField.Amount:
-                if (sortDirection.HasValue)
-                {
-                    SortDirection valueOrDefault = sortDirection.GetValueOrDefault();
-                    SortDirection sortDirection2 = valueOrDefault;
-                    if (sortDirection2 == SortDirection.asc)
-                    {
-                        text = "t.Amount ASC, t.Id ASC";
-                        break;
-                    }
-                    if (sortDirection2 == SortDirection.desc)
-                    {
-                        text = "t.Amount DESC, t.Id ASC";
-                        break;
-                    }
-                }
-                goto default;
-            case SortField.NewBalance:
-                if (sortDirection.HasValue)
-                {
-                    SortDirection valueOrDefault = sortDirection.GetValueOrDefault();
-                    SortDirection sortDirection2 = valueOrDefault;
-                    if (sortDirection2 == SortDirection.asc)
-                    {
-                        text = "CASE WHEN t.Currency = N'USD' THEN r.RunUsd ELSE r.RunIqd END ASC, t.Id ASC";
-                        break;
-                    }
-                    if (sortDirection2 == SortDirection.desc)
-                    {
-                        text = "CASE WHEN t.Currency = N'USD' THEN r.RunUsd ELSE r.RunIqd END DESC, t.Id ASC";
-                        break;
-                    }
-                }
-                goto default;
-            case SortField.Date:
-                if (sortDirection.HasValue)
-                {
-                    SortDirection valueOrDefault = sortDirection.GetValueOrDefault();
-                    SortDirection sortDirection2 = valueOrDefault;
-                    if (sortDirection2 == SortDirection.asc)
-                    {
-                        text = "t.Date ASC, t.Id ASC";
-                        break;
-                    }
-                    if (sortDirection2 == SortDirection.desc)
-                    {
-                        text = "t.Date DESC, t.Id ASC";
-                        break;
-                    }
-                }
-                goto default;
-            default:
-                text = "t.Date DESC, t.Id ASC";
-                break;
-        }
-        if (1 == 0)
-        {
-        }
-        string orderSql = text;
+            SortField.Category => $"c.Name {direction}, t.Id ASC",
+            SortField.PaymentMethod => $"pm.Name {direction}, t.Id ASC",
+            SortField.Description => $"t.Description {direction}, t.Id ASC",
+            SortField.Amount => $"t.Amount {direction}, t.Id ASC",
+            SortField.NewBalance => $"CASE WHEN t.Currency = N'USD' THEN r.RunUsd ELSE r.RunIqd END {direction}, t.Id ASC",
+            SortField.Date => $"t.Date {direction}, t.Id ASC",
+            _ => "t.Date DESC, t.Id ASC"
+        };
+        // والأمر نفسه في استعلام الصفحة: الربط فقط عند البحث بالأسماء أو الترتيب بها.
+        bool pageNeedsJoins = needsJoins || (knownDirection && sortBy is SortField.Category or SortField.PaymentMethod);
         int offset = (currentPage - 1) * currentSize;
-        string pageSql = $"\n;WITH src AS (\n    SELECT t.Id AS Id, t.Date AS TDate,\n           CASE WHEN t.Currency <> N'USD' AND t.Type = N'cash in'  THEN t.Amount\n                WHEN t.Currency <> N'USD' AND t.Type = N'cash out' THEN -t.Amount\n                ELSE CAST(0 AS decimal(18,3)) END AS dIqd,\n           CASE WHEN t.Currency = N'USD' AND t.Type = N'cash in'  THEN t.Amount\n                WHEN t.Currency = N'USD' AND t.Type = N'cash out' THEN -t.Amount\n                ELSE CAST(0 AS decimal(18,3)) END AS dUsd\n    FROM Transactions t\n    WHERE t.BookId = @p0 AND t.IsArchived = 0\n),\nrun AS (\n    SELECT Id,\n           SUM(dIqd) OVER (ORDER BY TDate, Id ROWS UNBOUNDED PRECEDING) AS RunIqd,\n           SUM(dUsd) OVER (ORDER BY TDate, Id ROWS UNBOUNDED PRECEDING) AS RunUsd\n    FROM src\n)\nSELECT r.Id, r.RunIqd, r.RunUsd\nFROM run r\nINNER JOIN Transactions t ON t.Id = r.Id\n{"\nLEFT JOIN Categories     c  ON c.Id  = t.CategoryId\nLEFT JOIN Contacts       co ON co.Id = t.ContactId\nLEFT JOIN PaymentMethods pm ON pm.Id = t.PaymentMethodId\nLEFT JOIN Users          u  ON u.Id  = t.UserId"}\n{whereSql}\nORDER BY {orderSql}\nOFFSET {offset} ROWS FETCH NEXT {currentSize} ROWS ONLY";
+        string pageSql = $"\n;WITH src AS (\n    SELECT t.Id AS Id, t.Date AS TDate,\n           CASE WHEN t.Currency <> N'USD' AND t.Type = N'cash in'  THEN t.Amount\n                WHEN t.Currency <> N'USD' AND t.Type = N'cash out' THEN -t.Amount\n                ELSE CAST(0 AS decimal(18,3)) END AS dIqd,\n           CASE WHEN t.Currency = N'USD' AND t.Type = N'cash in'  THEN t.Amount\n                WHEN t.Currency = N'USD' AND t.Type = N'cash out' THEN -t.Amount\n                ELSE CAST(0 AS decimal(18,3)) END AS dUsd\n    FROM Transactions t\n    WHERE t.BookId = @p0 AND t.IsArchived = 0\n),\nrun AS (\n    SELECT Id,\n           SUM(dIqd) OVER (ORDER BY TDate, Id ROWS UNBOUNDED PRECEDING) AS RunIqd,\n           SUM(dUsd) OVER (ORDER BY TDate, Id ROWS UNBOUNDED PRECEDING) AS RunUsd\n    FROM src\n)\nSELECT r.Id, r.RunIqd, r.RunUsd\nFROM run r\nINNER JOIN Transactions t ON t.Id = r.Id\n\n{(pageNeedsJoins ? joinSql : string.Empty)}{whereSql}\nORDER BY {orderSql}\nOFFSET {offset} ROWS FETCH NEXT {currentSize} ROWS ONLY";
         List<RunningRow> pageRows = await ExecuteRunningRowsAsync(pageSql, parameters);
         List<Guid> pageIds = pageRows.Select((RunningRow r) => r.Id).ToList();
         List<Transaction> list = ((pageIds.Count != 0) ? (await (from transaction in _context.Transactions.AsNoTracking().AsSplitQuery()
@@ -639,9 +538,8 @@ public class TransactionRepository : Repository<Transaction>, ITransactionReposi
             }
             return true;
         }
-        catch (Exception ex)
+        catch (Exception ex3)
         {
-            Exception ex3 = ex;
             throw new InvalidOperationException("تعذ\u0651ر تحديث الحركة. تحقق من البيانات وحاول مرة أخرى.", ex3);
         }
     }

@@ -14,9 +14,6 @@ public static class AuditCategory
 
 	public static string Label(string? category)
 	{
-		if (1 == 0)
-		{
-		}
 		string result = category switch
 		{
 			"Auth" => "مصادقة ودخول", 
@@ -25,9 +22,6 @@ public static class AuditCategory
 			"System" => "أحداث النظام", 
 			_ => "غير محد\u0651د", 
 		};
-		if (1 == 0)
-		{
-		}
 		return result;
 	}
 }

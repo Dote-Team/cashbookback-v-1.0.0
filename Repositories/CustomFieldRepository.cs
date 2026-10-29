@@ -22,7 +22,7 @@ public class CustomFieldRepository : Repository<CustomField>, ICustomFieldReposi
 		_context = context;
 	}
 
-	public async Task<PaginatedResponse<CustomFieldDto>> GetcustomFieldAsync(Guid bookId, int? skip = 1, int? take = 25, string search = null)
+	public async Task<PaginatedResponse<CustomFieldDto>> GetcustomFieldAsync(Guid bookId, int? skip = 1, int? take = 25, string? search = null)
 	{
 		int currentPage = skip ?? 1;
 		int currentPageSize = take ?? 25;

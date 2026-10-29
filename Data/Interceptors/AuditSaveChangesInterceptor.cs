@@ -21,7 +21,7 @@ public sealed class AuditSaveChangesInterceptor : SaveChangesInterceptor
 
 	private readonly AuditSettings _settings;
 
-	private readonly AsyncLocal<List<AuditLog>?> _pending = new AsyncLocal<List<AuditLog>>();
+	private readonly AsyncLocal<List<AuditLog>?> _pending = new AsyncLocal<List<AuditLog>?>();
 
 	public AuditSaveChangesInterceptor(IAuditLogger logger, IOptions<AuditSettings> settings)
 	{
@@ -144,9 +144,6 @@ public sealed class AuditSaveChangesInterceptor : SaveChangesInterceptor
 	private static AuditLog? Build(EntityEntry entry)
 	{
 		EntityState state = entry.State;
-		if (1 == 0)
-		{
-		}
 		string text = state switch
 		{
 			EntityState.Added => "Added", 
@@ -154,9 +151,6 @@ public sealed class AuditSaveChangesInterceptor : SaveChangesInterceptor
 			EntityState.Deleted => "Deleted", 
 			_ => null, 
 		};
-		if (1 == 0)
-		{
-		}
 		string text2 = text;
 		if (text2 == null)
 		{
@@ -248,9 +242,6 @@ public sealed class AuditSaveChangesInterceptor : SaveChangesInterceptor
 		}
 		if (operation == "Deleted")
 		{
-			if (1 == 0)
-			{
-			}
 			string result;
 			switch (entityName)
 			{
@@ -262,9 +253,6 @@ public sealed class AuditSaveChangesInterceptor : SaveChangesInterceptor
 			default:
 				result = "Warning";
 				break;
-			}
-			if (1 == 0)
-			{
 			}
 			return result;
 		}

@@ -38,7 +38,7 @@ public class BusinessRepository : Repository<Business>, IBusinessRepository, IRe
 		return business.Id;
 	}
 
-	public async Task<PaginatedResponse<BusinessDto>> GetPaginatedBusinessesAsync(List<Guid> businessIds, List<Guid>? accessibleBookIds, string role, int? skip = 1, int? take = 25, string search = null)
+	public async Task<PaginatedResponse<BusinessDto>> GetPaginatedBusinessesAsync(List<Guid> businessIds, List<Guid>? accessibleBookIds, string role, int? skip = 1, int? take = 25, string? search = null)
 	{
 		int currentPage = Math.Max(1, skip ?? 1);
 		int currentSize = Math.Clamp(take ?? 25, 1, 200);

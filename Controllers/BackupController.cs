@@ -109,9 +109,8 @@ public class BackupController : ControllerBase
 			}
 			return File(await _backupService.ExportBookAsync(book.Id, request.Password, userId), "application/octet-stream", BuildFileName(book.Name));
 		}
-		catch (InvalidOperationException ex)
+		catch (InvalidOperationException ex2)
 		{
-			InvalidOperationException ex2 = ex;
 			return FailRaw(HttpStatusCode.BadRequest, ex2.Message);
 		}
 	}
@@ -146,9 +145,8 @@ public class BackupController : ControllerBase
 			_response.Result = manifest;
 			return Ok(_response);
 		}
-		catch (InvalidOperationException ex)
+		catch (InvalidOperationException ex2)
 		{
-			InvalidOperationException ex2 = ex;
 			return Fail(HttpStatusCode.BadRequest, ex2.Message);
 		}
 	}
@@ -204,9 +202,8 @@ public class BackupController : ControllerBase
 			_response.Result = result;
 			return Ok(_response);
 		}
-		catch (InvalidOperationException ex)
+		catch (InvalidOperationException ex2)
 		{
-			InvalidOperationException ex2 = ex;
 			return Fail(HttpStatusCode.BadRequest, ex2.Message);
 		}
 	}

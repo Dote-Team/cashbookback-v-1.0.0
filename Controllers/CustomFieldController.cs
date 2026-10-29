@@ -1,7 +1,6 @@
 using System;
 using System.Net;
 using System.Threading.Tasks;
-using AutoMapper;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using cashbook.Dto;
@@ -21,16 +20,13 @@ namespace cashbook.Controllers;
 [Authorize]
 public class CustomFieldController : ApiControllerBase
 {
-	private readonly IMapper _mapper;
-
 	private readonly ICustomFieldRepository _customFieldRepository;
 
 	private readonly IPermissionService _permissions;
 
-	public CustomFieldController(ICustomFieldRepository customFieldRepository, IMapper mapper, IPermissionService permissions)
+	public CustomFieldController(ICustomFieldRepository customFieldRepository, IPermissionService permissions)
 	{
 		_customFieldRepository = customFieldRepository;
-		_mapper = mapper;
 		_permissions = permissions;
 	}
 
@@ -86,7 +82,12 @@ public class CustomFieldController : ApiControllerBase
 		{
 			return Denied(access.Status, "لا تملك صلاحية إضافة حقل في هذه الخزنة.");
 		}
-		CustomField customField = _mapper.Map<CustomField>(createCustomFieldDto);
+		CustomField customField = new CustomField
+		{
+			Key = createCustomFieldDto.Key.Trim(),
+			BookId = createCustomFieldDto.BookId,
+			IsRequired = createCustomFieldDto.IsRequired
+		};
 		await _customFieldRepository.CreateAsync(customField);
 		return Success(customField, HttpStatusCode.Created);
 	}
@@ -134,7 +135,14 @@ public class CustomFieldController : ApiControllerBase
 		{
 			return Denied(access.Status, "لا تملك صلاحية تعديل حقل في هذه الخزنة.");
 		}
-		_mapper.Map(updateCustomFieldDto, existingCustomField);
+		if (!string.IsNullOrWhiteSpace(updateCustomFieldDto.Key))
+		{
+			existingCustomField.Key = updateCustomFieldDto.Key.Trim();
+		}
+		if (updateCustomFieldDto.IsRequired.HasValue)
+		{
+			existingCustomField.IsRequired = updateCustomFieldDto.IsRequired.Value;
+		}
 		await _customFieldRepository.UpdateAsync(existingCustomField);
 		return Success(existingCustomField);
 	}

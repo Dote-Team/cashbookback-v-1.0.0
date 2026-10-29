@@ -1,6 +1,5 @@
 using System;
 using System.Threading.Tasks;
-using AutoMapper;
 using Microsoft.AspNetCore.Mvc;
 using cashbook.Dto;
 using cashbook.Dto.paymentMethod;
@@ -16,8 +15,8 @@ public class PaymentMethodController : BusinessReferenceController<PaymentMethod
 {
 	private readonly IPaymentMethodRepository _repository;
 
-	public PaymentMethodController(IPaymentMethodRepository repository, IPermissionService permissions, IMapper mapper)
-		: base(repository, permissions, mapper)
+	public PaymentMethodController(IPaymentMethodRepository repository, IPermissionService permissions)
+		: base(repository, permissions)
 	{
 		_repository = repository;
 	}
@@ -30,4 +29,25 @@ public class PaymentMethodController : BusinessReferenceController<PaymentMethod
 		_repository.GetPaymentMethodsAsync(businessId, skip, take, search);
 
 	protected override Guid BusinessIdOf(CreatePaymentMethodDto dto) => dto.BusinessId;
+
+	protected override PaymentMethodDto ToDto(PaymentMethod entity) => new PaymentMethodDto
+	{
+		Id = entity.Id,
+		Name = entity.Name,
+		BusinessId = entity.BusinessId,
+		CreatedAt = entity.CreatedAt,
+		UpdatedAt = entity.UpdatedAt
+	};
+
+	protected override string? ValidateCreate(CreatePaymentMethodDto dto) => string.IsNullOrWhiteSpace(dto.Name) ? "الاسم مطلوب." : null;
+
+	protected override PaymentMethod FromCreate(CreatePaymentMethodDto dto) => new PaymentMethod { Name = dto.Name.Trim(), BusinessId = dto.BusinessId };
+
+	protected override void ApplyUpdate(UpdatePaymentMethodDto dto, PaymentMethod entity)
+	{
+		if (!string.IsNullOrWhiteSpace(dto.Name))
+		{
+			entity.Name = dto.Name.Trim();
+		}
+	}
 }

@@ -199,7 +199,6 @@ internal class Program
                 }, new JsonSerializerSettings { ContractResolver = new CamelCasePropertyNamesContractResolver() }), cancellationToken);
             };
         });
-        builder.Services.AddAutoMapper(AppDomain.CurrentDomain.GetAssemblies());
         builder.Services.AddDbContext<ApplicationDbContext>(delegate (IServiceProvider serviceProvider, DbContextOptionsBuilder option)
         {
             option.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"));

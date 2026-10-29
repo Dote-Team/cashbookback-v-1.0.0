@@ -8,5 +8,5 @@ namespace cashbook.Interfaces;
 
 public interface IPaymentMethodRepository : IRepository<PaymentMethod>
 {
-	Task<PaginatedResponse<PaymentMethodDto>> GetPaymentMethodsAsync(Guid businessId, int? skip = 1, int? take = 25, string search = null);
+	Task<PaginatedResponse<PaymentMethodDto>> GetPaymentMethodsAsync(Guid businessId, int? skip = 1, int? take = 25, string? search = null);
 }

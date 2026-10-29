@@ -22,7 +22,7 @@ public class PaymentMethodRepository : Repository<PaymentMethod>, IPaymentMethod
 		_context = context;
 	}
 
-	public async Task<PaginatedResponse<PaymentMethodDto>> GetPaymentMethodsAsync(Guid businessId, int? skip = 1, int? take = 25, string search = null)
+	public async Task<PaginatedResponse<PaymentMethodDto>> GetPaymentMethodsAsync(Guid businessId, int? skip = 1, int? take = 25, string? search = null)
 	{
 		int currentPage = skip ?? 1;
 		int currentPageSize = take ?? 25;

@@ -13,13 +13,7 @@ public static class MoneyMath
 
 	public static int DecimalsFor(CurrencyCode currency)
 	{
-		if (1 == 0)
-		{
-		}
 		int result = ((currency != CurrencyCode.USD) ? 3 : 2);
-		if (1 == 0)
-		{
-		}
 		return result;
 	}
 

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -55,7 +55,7 @@ public class BookRepository : Repository<Book>, IBookRepository, IRepository<Boo
 	}
 
 	/// <param name="allowedBookIds">الخزائن التي يملك المستخدم عرضها، أو null للسوبر أدمن (كل خزائن المنشأة).</param>
-	public async Task<PaginatedResponse<BookDto>> GetBooksAsync(Guid businessId, List<Guid>? allowedBookIds, int? skip = 1, int? take = 25, string search = null, SortField? sortBy = null, SortDirection? sortDirection = SortDirection.desc)
+	public async Task<PaginatedResponse<BookDto>> GetBooksAsync(Guid businessId, List<Guid>? allowedBookIds, int? skip = 1, int? take = 25, string? search = null, SortField? sortBy = null, SortDirection? sortDirection = SortDirection.desc)
 	{
 		int currentPage = Math.Max(1, skip ?? 1);
 		int currentPageSize = Math.Clamp(take ?? 25, 1, 200);
@@ -91,71 +91,17 @@ public class BookRepository : Repository<Book>, IBookRepository, IRepository<Boo
 				CashInUsd = (b.Transactions.AsQueryable().Where((Transaction t) => !t.IsArchived && t.Currency == CurrencyCode.USD && t.Type == "cash in").Sum((Transaction t) => (decimal?)t.Amount) ?? 0m),
 				CashOutUsd = (b.Transactions.AsQueryable().Where((Transaction t) => !t.IsArchived && t.Currency == CurrencyCode.USD && t.Type == "cash out").Sum((Transaction t) => (decimal?)t.Amount) ?? 0m)
 			};
-		if (1 == 0)
+		bool ascending = sortDirection == SortDirection.asc;
+		bool known = sortDirection is SortDirection.asc or SortDirection.desc;
+		booksRaw = (known ? sortBy : null) switch
 		{
-		}
-		IOrderedQueryable<BookAggregate> orderedQueryable;
-		switch (sortBy)
-		{
-		case SortField.Name:
-			if (sortDirection.HasValue)
-			{
-				SortDirection valueOrDefault = sortDirection.GetValueOrDefault();
-				SortDirection sortDirection2 = valueOrDefault;
-				if (sortDirection2 == SortDirection.asc)
-				{
-					orderedQueryable = booksRaw.OrderBy(b => b.Name);
-					break;
-				}
-				if (sortDirection2 == SortDirection.desc)
-				{
-					orderedQueryable = booksRaw.OrderByDescending(b => b.Name);
-					break;
-				}
-			}
-			goto default;
-		case SortField.CreatedAt:
-			if (sortDirection.HasValue)
-			{
-				SortDirection valueOrDefault = sortDirection.GetValueOrDefault();
-				SortDirection sortDirection2 = valueOrDefault;
-				if (sortDirection2 == SortDirection.asc)
-				{
-					orderedQueryable = booksRaw.OrderBy(b => b.CreatedAt);
-					break;
-				}
-				if (sortDirection2 == SortDirection.desc)
-				{
-					orderedQueryable = booksRaw.OrderByDescending(b => b.CreatedAt);
-					break;
-				}
-			}
-			goto default;
-		case SortField.Balance:
-			if (sortDirection.HasValue)
-			{
-				SortDirection valueOrDefault = sortDirection.GetValueOrDefault();
-				SortDirection sortDirection2 = valueOrDefault;
-				if (sortDirection2 == SortDirection.asc)
-				{
-					orderedQueryable = booksRaw.OrderBy(b => b.CashInIqd - b.CashOutIqd).ThenBy(b => b.CashInUsd - b.CashOutUsd);
-					break;
-				}
-				if (sortDirection2 == SortDirection.desc)
-				{
-					orderedQueryable = booksRaw.OrderByDescending(b => b.CashInIqd - b.CashOutIqd).ThenByDescending(b => b.CashInUsd - b.CashOutUsd);
-					break;
-				}
-			}
-			goto default;
-		default:
-			orderedQueryable = booksRaw.OrderByDescending(b => b.CreatedAt);
-			break;
-		}
-		if (1 == 0)
-		{
-		}
-		booksRaw = orderedQueryable;
+			SortField.Name => ascending ? booksRaw.OrderBy(b => b.Name) : booksRaw.OrderByDescending(b => b.Name),
+			SortField.CreatedAt => ascending ? booksRaw.OrderBy(b => b.CreatedAt) : booksRaw.OrderByDescending(b => b.CreatedAt),
+			SortField.Balance => ascending
+				? booksRaw.OrderBy(b => b.CashInIqd - b.CashOutIqd).ThenBy(b => b.CashInUsd - b.CashOutUsd)
+				: booksRaw.OrderByDescending(b => b.CashInIqd - b.CashOutIqd).ThenByDescending(b => b.CashInUsd - b.CashOutUsd),
+			_ => booksRaw.OrderByDescending(b => b.CreatedAt)
+		};
 		int totalRecords = await booksRaw.CountAsync();
 		List<BookDto> paginatedBooks = (await booksRaw.Skip((currentPage - 1) * currentPageSize).Take(currentPageSize).ToListAsync()).Select(b =>
 		{

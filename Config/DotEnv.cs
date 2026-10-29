@@ -83,6 +83,6 @@ public static class DotEnv
 			}
 		}
 		text2 = text2.Replace("__", ":");
-		return new KeyValuePair<string, string>(text2, text3);
+		return new KeyValuePair<string, string?>(text2, text3);
 	}
 }

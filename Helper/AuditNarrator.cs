@@ -113,9 +113,6 @@ public static class AuditNarrator
 		string text2 = action.Substring(0, num);
 		string text3 = action.Substring(num + 1);
 		string text4 = (EntityLabels.TryGetValue(text2, out string value) ? value : text2);
-		if (1 == 0)
-		{
-		}
 		string text5 = text3 switch
 		{
 			"create" => "إضافة", 
@@ -126,9 +123,6 @@ public static class AuditNarrator
 			"duplicate" => "نسخ", 
 			_ => text3, 
 		};
-		if (1 == 0)
-		{
-		}
 		string text6 = text5;
 		return text6 + " " + text4;
 	}
@@ -245,9 +239,6 @@ public static class AuditNarrator
 	private static string MethodVerb(string method)
 	{
 		string text = method.ToUpperInvariant();
-		if (1 == 0)
-		{
-		}
 		string result;
 		switch (text)
 		{
@@ -264,9 +255,6 @@ public static class AuditNarrator
 		default:
 			result = "read";
 			break;
-		}
-		if (1 == 0)
-		{
 		}
 		return result;
 	}

@@ -11,7 +11,7 @@ namespace cashbook.Interfaces;
 
 public interface IBookRepository : IRepository<Book>
 {
-	Task<PaginatedResponse<BookDto>> GetBooksAsync(Guid businessId, List<Guid>? allowedBookIds, int? skip = 1, int? take = 25, string search = null, SortField? sortBy = null, SortDirection? sortDirection = SortDirection.desc);
+	Task<PaginatedResponse<BookDto>> GetBooksAsync(Guid businessId, List<Guid>? allowedBookIds, int? skip = 1, int? take = 25, string? search = null, SortField? sortBy = null, SortDirection? sortDirection = SortDirection.desc);
 
 	Task<bool> CreateBookAsync(CreateBookDto createBookDto);
 

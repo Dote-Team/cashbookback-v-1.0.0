@@ -303,18 +303,12 @@ public class AuditLogRepository : IAuditLogRepository
 		if (!string.IsNullOrWhiteSpace(query.Severity))
 		{
 			int num = AuditSeverity.Rank(query.Severity);
-			if (1 == 0)
-			{
-			}
 			string[] array = num switch
 			{
 				3 => new string[1] { "Critical" }, 
 				2 => new string[2] { "Critical", "Warning" }, 
 				_ => new string[3] { "Critical", "Warning", "Info" }, 
 			};
-			if (1 == 0)
-			{
-			}
 			string[] allowed = array;
 			source = source.Where((AuditLog a) => Enumerable.Contains(allowed, a.Severity));
 		}
@@ -346,9 +340,6 @@ public class AuditLogRepository : IAuditLogRepository
 	{
 		bool flag = !string.Equals(query.SortDirection, "asc", StringComparison.OrdinalIgnoreCase);
 		string text = query.SortBy?.ToLowerInvariant();
-		if (1 == 0)
-		{
-		}
 		IOrderedQueryable<AuditLog> result = text switch
 		{
 			"duration" => flag ? (from a in source
@@ -372,9 +363,6 @@ public class AuditLogRepository : IAuditLogRepository
 				orderby a.OccurredAt, a.Id
 				select a), 
 		};
-		if (1 == 0)
-		{
-		}
 		return result;
 	}
 

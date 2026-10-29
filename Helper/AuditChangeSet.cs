@@ -42,13 +42,7 @@ public static class AuditChangeSet
 			string text4 = AuditNarrator.FormatValue(item2.OldValue);
 			string text5 = AuditNarrator.FormatValue(item2.NewValue);
 			List<string> list2 = list;
-			if (1 == 0)
-			{
-			}
 			string item = ((operation == "Added") ? (text3 + ": " + text5) : ((!(operation == "Deleted")) ? ((text4 == text5) ? (text3 + ": " + text5) : $"{text3}: {text4} ← {text5}") : (text3 + ": " + text4)));
-			if (1 == 0)
-			{
-			}
 			list2.Add(item);
 		}
 		string text6 = string.Join("، ", list);

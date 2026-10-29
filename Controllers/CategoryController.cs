@@ -1,6 +1,5 @@
 using System;
 using System.Threading.Tasks;
-using AutoMapper;
 using Microsoft.AspNetCore.Mvc;
 using cashbook.Dto;
 using cashbook.Dto.category;
@@ -16,8 +15,8 @@ public class CategoryController : BusinessReferenceController<Category, Category
 {
 	private readonly ICategoryRepository _repository;
 
-	public CategoryController(ICategoryRepository repository, IPermissionService permissions, IMapper mapper)
-		: base(repository, permissions, mapper)
+	public CategoryController(ICategoryRepository repository, IPermissionService permissions)
+		: base(repository, permissions)
 	{
 		_repository = repository;
 	}
@@ -30,4 +29,25 @@ public class CategoryController : BusinessReferenceController<Category, Category
 		_repository.GetCategoriesAsync(businessId, skip, take, search);
 
 	protected override Guid BusinessIdOf(CreateCategoryDto dto) => dto.BusinessId;
+
+	protected override CategoryDto ToDto(Category entity) => new CategoryDto
+	{
+		Id = entity.Id,
+		Name = entity.Name,
+		BusinessId = entity.BusinessId,
+		CreatedAt = entity.CreatedAt,
+		UpdatedAt = entity.UpdatedAt
+	};
+
+	protected override string? ValidateCreate(CreateCategoryDto dto) => string.IsNullOrWhiteSpace(dto.Name) ? "الاسم مطلوب." : null;
+
+	protected override Category FromCreate(CreateCategoryDto dto) => new Category { Name = dto.Name.Trim(), BusinessId = dto.BusinessId };
+
+	protected override void ApplyUpdate(UpdateCategoryDto dto, Category entity)
+	{
+		if (!string.IsNullOrWhiteSpace(dto.Name))
+		{
+			entity.Name = dto.Name.Trim();
+		}
+	}
 }

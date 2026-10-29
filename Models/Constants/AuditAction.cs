@@ -69,9 +69,6 @@ public static class AuditAction
 
 	public static string Label(string? action)
 	{
-		if (1 == 0)
-		{
-		}
 		string result = action switch
 		{
 			"user.login.success" => "دخول ناجح", 
@@ -100,9 +97,6 @@ public static class AuditAction
 			"backup.restore" => "استعادة نسخة احتياطية", 
 			_ => action ?? "عملية غير معروفة", 
 		};
-		if (1 == 0)
-		{
-		}
 		return result;
 	}
 }
