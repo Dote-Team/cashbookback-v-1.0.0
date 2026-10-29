@@ -1,5 +1,6 @@
 """End-to-end checks against the dev API (cashbook_dev database)."""
 import os
+ROOT_USERNAME = os.environ.get("CASHBOOK_ROOT_USERNAME", "root")
 ROOT_PASSWORD = os.environ["CASHBOOK_ROOT_PASSWORD"]
 DEMO_PASSWORD = os.environ["CASHBOOK_DEMO_PASSWORD"]
 
@@ -69,7 +70,7 @@ def sample(seed, w=256, h=288):
     return {"width": w, "height": h, "dpi": 500, "pixels": base64.b64encode(px).decode()}
 
 
-root, rootInfo = tok("root", ROOT_PASSWORD)
+root, rootInfo = tok(ROOT_USERNAME, ROOT_PASSWORD)
 check("super admin login level=1", rootInfo["level"] == 1 and rootInfo["isSuperAdmin"], rootInfo)
 owner, ownerInfo = tok("aaaa", DEMO_PASSWORD)
 check("migrated owner is admin level=2", ownerInfo["level"] == 2, ownerInfo)

@@ -370,6 +370,12 @@ internal class Program
         using (IServiceScope scope = app.Services.CreateScope())
         {
             ApplicationDbContext dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            // تطبيق الترحيلات عند الإقلاع: قاعدة غير موجودة تُنشأ كاملة، وقاعدة قديمة تُرقّى.
+            // يُعطَّل بـ Database__MigrateOnStartup=false لمن يفضّل تشغيل الترحيل يدوياً (Dockerfile.migrate).
+            if (app.Configuration.GetValue<bool?>("Database:MigrateOnStartup") ?? true)
+            {
+                await dbContext.Database.MigrateAsync();
+            }
             string adminUsername = app.Configuration.GetValue<string>("AdminUser:Username");
             string adminEmail = app.Configuration.GetValue<string>("AdminUser:Email");
             bool hasUsername = !string.IsNullOrWhiteSpace(adminUsername);

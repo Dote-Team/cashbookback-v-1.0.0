@@ -61,14 +61,16 @@ cp   .env.example .env        # لينكس
 docker compose build
 ```
 
-### ج) أنشئ جداول قاعدة البيانات (مرة واحدة عند أول نشر، وبعد كل ترحيل جديد)
+### ج) قاعدة البيانات
+
+الـ API يطبّق الترحيلات بنفسه عند الإقلاع: إن لم تكن القاعدة موجودة أنشأها كاملة، ثم أنشأ
+السوبر أدمن من `AdminUser__Username` و`AdminUser__Password`. لا يلزم أي أمر إضافي.
+
+لمن يفضّل تشغيل الترحيل يدوياً: ضع `Database__MigrateOnStartup=false` في `.env`، ثم:
 
 ```bash
 docker compose --profile tools run --rm migrate
 ```
-
-هذه الصورة تبني المشروع وتشغّل `dotnet ef database update`، ثم تختفي (`--rm`).
-الصورة الإنتاجية لا تحتوي مترجماً ولا أداة `dotnet-ef`، فلا تستطيع إنشاء الجداول بنفسها.
 
 ### د) شغّل النظام
 

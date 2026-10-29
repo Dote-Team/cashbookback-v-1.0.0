@@ -4,12 +4,11 @@
 
 ## المتطلبات
 
-قاعدة التطوير `cash` على SQL Express جاهزة بالبيانات التجريبية، وملف `.env.local` (مستثنى من Git) فيه الاتصال والأسرار وكلمات مرور الحسابات التجريبية وحد الدخول المرفوع للاختبارات. لإعادة بنائها من الصفر:
+قاعدة التطوير `cash` على SQL Express، وملف `.env.local` (مستثنى من Git) فيه الاتصال والأسرار وحساب السوبر أدمن وحد الدخول المرفوع للاختبارات. لإنشاء القاعدة من الصفر:
 
-1. `DOTENV_PATH=.env.local dotnet ef database update 20261008002347_AddTrashRelatedJson`
-2. أضف المستخدم `aaaa` بكلمة مرور الحسابات التجريبية، ثم `sqlcmd -S localhost\SQLEXPRESS -d cash -E -i Seed\SeedDemoData.sql -f 65001`
-3. `DOTENV_PATH=.env.local dotnet ef database update` (يحوّل الأدوار القديمة إلى الصلاحيات الجديدة)
-4. Python 3.10 أو أحدث، دون أي حزم إضافية.
+1. احذف القاعدة القديمة إن وُجدت، ثم `dotnet run --launch-profile http`: الـ API ينشئ القاعدة وحساب السوبر أدمن بنفسه.
+2. `sqlcmd -S localhost\SQLEXPRESS -d cash -E -i Seed\SeedDemoData.sql -f 65001`: البيانات التجريبية، والحسابات `aaaa` و`demo1` إلى `demo8` بكلمة مرور السوبر أدمن نفسها.
+3. Python 3.10 أو أحدث، دون أي حزم إضافية.
 
 ## التشغيل
 
@@ -20,7 +19,9 @@ dotnet run --launch-profile http
 في نافذة أخرى:
 
 ```
-export $(grep -E "^CASHBOOK_(ROOT|DEMO)_PASSWORD=" .env.local | xargs)
+export CASHBOOK_ROOT_USERNAME=$(grep ^AdminUser__Username= .env.local | cut -d= -f2-)
+export CASHBOOK_ROOT_PASSWORD=$(grep ^AdminUser__Password= .env.local | cut -d= -f2-)
+export CASHBOOK_DEMO_PASSWORD=$CASHBOOK_ROOT_PASSWORD
 python tests/integration/test_permissions_archive.py
 python tests/integration/test_security.py
 python tests/integration/test_sessions_export.py

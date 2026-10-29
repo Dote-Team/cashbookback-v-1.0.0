@@ -1,5 +1,6 @@
 """Batch 4: explicit mapping keeps fields that were not sent; validation on create."""
 import os
+ROOT_USERNAME = os.environ.get("CASHBOOK_ROOT_USERNAME", "root")
 ROOT_PASSWORD = os.environ["CASHBOOK_ROOT_PASSWORD"]
 DEMO_PASSWORD = os.environ["CASHBOOK_DEMO_PASSWORD"]
 
@@ -33,7 +34,7 @@ def check(name, cond, info=""):
     print(("PASS " if cond else "FAIL ") + name + ("" if cond else "  -> " + str(info)[:300]))
 
 
-s, r = call("POST", "/User/login", body={"username": "root", "password": ROOT_PASSWORD})
+s, r = call("POST", "/User/login", body={"username": ROOT_USERNAME, "password": ROOT_PASSWORD})
 root = r["result"]["accessToken"]
 u = uuid.uuid4().hex[:6]
 

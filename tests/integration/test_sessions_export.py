@@ -1,5 +1,6 @@
 """Batch 2: session cache invalidation, export projection, expired session cleanup query."""
 import os
+ROOT_USERNAME = os.environ.get("CASHBOOK_ROOT_USERNAME", "root")
 ROOT_PASSWORD = os.environ["CASHBOOK_ROOT_PASSWORD"]
 DEMO_PASSWORD = os.environ["CASHBOOK_DEMO_PASSWORD"]
 
@@ -42,7 +43,7 @@ def login(u, p):
     return r["result"]
 
 
-root = login("root", ROOT_PASSWORD)["accessToken"]
+root = login(ROOT_USERNAME, ROOT_PASSWORD)["accessToken"]
 
 # logout invalidates the cached session immediately
 t = login("demo4", DEMO_PASSWORD)["accessToken"]

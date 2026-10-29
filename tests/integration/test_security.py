@@ -1,5 +1,6 @@
 """Batch 1 security checks: signed attachment links, upload validation, JWT claims, rate limit, CORS, body limit."""
 import os
+ROOT_USERNAME = os.environ.get("CASHBOOK_ROOT_USERNAME", "root")
 ROOT_PASSWORD = os.environ["CASHBOOK_ROOT_PASSWORD"]
 DEMO_PASSWORD = os.environ["CASHBOOK_DEMO_PASSWORD"]
 
@@ -55,7 +56,7 @@ def png():
     return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 0, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(b"\x00\x00")) + chunk(b"IEND", b"")
 
 
-s, r, _ = req("POST", "/API/User/login", body={"username": "root", "password": ROOT_PASSWORD})
+s, r, _ = req("POST", "/API/User/login", body={"username": ROOT_USERNAME, "password": ROOT_PASSWORD})
 root = r["result"]["accessToken"]
 payload = json.loads(base64.urlsafe_b64decode(root.split(".")[1] + "=="))
 check("access token has issuer and audience", payload.get("iss") == "cashbook-api" and payload.get("aud") == "cashbook-client", payload)
