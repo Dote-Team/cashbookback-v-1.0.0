@@ -341,6 +341,10 @@ internal class Program
             return Results.File(path, contentType);
         }).WithDisplayName("ShowImage");
         // فحص الصحة لـ Docker والمراقبة: 200 إن كانت قاعدة البيانات متاحة، و503 إن لم تكن.
+        // الصفحة الرئيسية: في التطوير تفتح Swagger، وفي الإنتاج تعرض اسم الخدمة ورابط فحص الصحة.
+        app.MapGet("/", () => app.Environment.IsDevelopment()
+            ? Results.Redirect("/swagger")
+            : Results.Json(new { service = "cashbook-api", health = "/health" })).ExcludeFromDescription();
         app.MapGet("/health", async delegate (ApplicationDbContext db, System.Threading.CancellationToken cancellationToken)
         {
             bool database = await db.Database.CanConnectAsync(cancellationToken);

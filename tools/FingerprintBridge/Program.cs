@@ -47,6 +47,9 @@ app.Use(async (context, next) =>
 });
 app.UseCors();
 
+// فتح العنوان مباشرة في المتصفح يعرض حالة القارئ بدل صفحة 404.
+app.MapGet("/", () => Results.Redirect("/status"));
+
 app.MapGet("/status", (IFingerprintScanner scanner) => Results.Ok(new
 {
 	bridge = "cashbook-fingerprint-bridge",
