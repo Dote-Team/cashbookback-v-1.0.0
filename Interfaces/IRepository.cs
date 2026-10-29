@@ -16,7 +16,7 @@ public interface IRepository<T> where T : class
 
 	Task RemoveAsync(T entiry);
 
-	Task TrashAsync(T entity, Guid? deletedByUserId);
+	Task ArchiveAsync(T entity, Guid? archivedByUserId, string? reason = null);
 
 	Task UpdateAsync(T entity);
 

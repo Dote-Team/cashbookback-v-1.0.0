@@ -12,7 +12,5 @@ public interface ITrashRepository
 
 	Task<TrashItem?> GetTrashItemAsync(Guid trashId);
 
-	Task<bool> RestoreAsync(Guid trashId);
 
-	Task<bool> HardDeleteAsync(Guid trashId);
 }

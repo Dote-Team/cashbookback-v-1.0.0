@@ -5,7 +5,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace cashbook.Models;
 
-public class CustomField
+public class CustomField : IArchivable
 {
 	[Required]
 	[Key]
@@ -25,4 +25,13 @@ public class CustomField
 	public bool IsRequired { get; set; }
 
 	public ICollection<CustomFieldValue> CustomFieldValues { get; set; } = new List<CustomFieldValue>();
+
+	public bool IsArchived { get; set; }
+
+	public DateTime? ArchivedAt { get; set; }
+
+	public Guid? ArchivedByUserId { get; set; }
+
+	[MaxLength(500)]
+	public string? ArchiveReason { get; set; }
 }

@@ -33,6 +33,24 @@ public class User
 
 	public bool IsSuperAdmin { get; set; }
 
+	/// <summary>1 = سوبر أدمن، 2 = أدمن، 3 = مستخدم. انظر <c>UserLevels</c>.</summary>
+	public int Level { get; set; } = 3;
+
+	/// <summary>من أنشأ هذا المستخدم. الأدمن يدير المستخدمين الذين أنشأهم فقط.</summary>
+	public Guid? ParentUserId { get; set; }
+
+	/// <summary>المستخدم لا يُحذف: التعطيل يمنعه من الدخول ويُبطل جلساته.</summary>
+	public bool IsActive { get; set; } = true;
+
+	/// <summary>يُخفى من قوائم المستخدمين (السوبر أدمن).</summary>
+	public bool IsHidden { get; set; }
+
+	public DateTime? DeactivatedAt { get; set; }
+
+	public Guid? DeactivatedByUserId { get; set; }
+
+	public ICollection<UserWalletPermission> WalletPermissions { get; set; }
+
 	public ICollection<Session> Sessions { get; set; }
 
 	public ICollection<BusinessUser> BusinessUsers { get; set; }

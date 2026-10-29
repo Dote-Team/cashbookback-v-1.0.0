@@ -7,7 +7,6 @@ namespace cashbook.Interfaces;
 public interface IEmailService
 {
 	/// <summary>يضيف العضو إلى المنشأة بعد التحقّق من الصلاحيات ومدى صحة الخزائن.</summary>
-	Task<bool> SendInvaiteByEmail(InviteDto inviteDto);
 
 	/// <summary>
 	/// يرسل بريداً يُعرّف العضو المضاف بعضويته ودوره.

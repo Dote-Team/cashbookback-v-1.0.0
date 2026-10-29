@@ -131,37 +131,4 @@ public class EmailService : IEmailService
                 return role ?? string.Empty;
         }
     }
-
-    public async Task<bool> SendInvaiteByEmail(InviteDto inviteDto)
-    {
-        User user = await _context.Users.FirstOrDefaultAsync((User u) => u.Email.ToLower() == inviteDto.Email.ToLower());
-        if (user == null)
-        {
-            throw new InvalidOperationException("المستخدم ذو البريد الإلكتروني '" + inviteDto.Email + "' غير موجود.");
-        }
-        if (await _context.BusinessUsers.AnyAsync((BusinessUser bu) => bu.BusinessId == inviteDto.BusinessId && bu.UserId == user.Id && bu.Role == inviteDto.Role))
-        {
-            throw new InvalidOperationException("User is already associated with this business.");
-        }
-        BusinessUser businessUser = new BusinessUser
-        {
-            UserId = user.Id,
-            BusinessId = inviteDto.BusinessId,
-            Role = inviteDto.Role
-        };
-        if (inviteDto.BookIds != null && Roles.IsBookScoped(inviteDto.Role))
-        {
-            List<Guid> validBooks = await (from b in _context.Books
-                                           where inviteDto.BookIds.Contains(b.Id) && b.BusinessId == inviteDto.BusinessId
-                                           select b.Id).ToListAsync();
-            if (validBooks.Count != inviteDto.BookIds.Count)
-            {
-                throw new InvalidOperationException("One or more BookIds are invalid or do not belong to the business.");
-            }
-            businessUser.BookIds = validBooks;
-        }
-        _context.BusinessUsers.Add(businessUser);
-        await _context.SaveChangesAsync();
-        return true;
-    }
 }

@@ -14,6 +14,7 @@ using cashbook.Dto.customfield;
 using cashbook.Helper;
 using cashbook.Interfaces;
 using cashbook.Models;
+using cashbook.Services;
 
 namespace cashbook.Controllers;
 
@@ -29,8 +30,11 @@ public class CustomFieldController : ControllerBase
 
 	private readonly ApplicationDbContext _context;
 
-	public CustomFieldController(ICustomFieldRepository customFieldRepository, IMapper mapper, ApplicationDbContext context)
+	private readonly IPermissionService _permissions;
+
+	public CustomFieldController(ICustomFieldRepository customFieldRepository, IMapper mapper, ApplicationDbContext context, IPermissionService permissions)
 	{
+		_permissions = permissions;
 		_customFieldRepository = customFieldRepository;
 		_response = new APIResponse();
 		_mapper = mapper;
@@ -56,35 +60,15 @@ public class CustomFieldController : ControllerBase
 	///
 	/// ويُفحص نطاق الخزنة (BookIds) للأدوار المقيَّدة، كما يُفحص في القراءة.
 	/// </summary>
-	private async Task<FieldAccess> CheckWalletAccessAsync(Guid userId, Guid walletId, string[] allowedRoles)
+	private async Task<FieldAccess> CheckWalletAccessAsync(Guid userId, Guid walletId, string permission)
 	{
-		if (walletId == Guid.Empty)
+		BookAccess access = await _permissions.CheckBookAsync(userId, walletId, permission);
+		return access.Status switch
 		{
-			return FieldAccess.WalletNotFound;
-		}
-		Book wallet = await _context.Books.AsNoTracking().FirstOrDefaultAsync((Book b) => b.Id == walletId);
-		if (wallet == null)
-		{
-			return FieldAccess.WalletNotFound;
-		}
-		string role = await (from bu in _context.BusinessUsers
-							 where bu.UserId == userId && bu.BusinessId == wallet.BusinessId
-							 select bu.Role.ToLower()).FirstOrDefaultAsync();
-		if (role == null || !Enumerable.Contains(allowedRoles, role))
-		{
-			return FieldAccess.Forbidden;
-		}
-		if (Roles.IsBookScoped(role))
-		{
-			List<Guid> allowedBooks = await (from bu in _context.BusinessUsers
-											 where bu.UserId == userId && bu.BusinessId == wallet.BusinessId
-											 select bu.BookIds).FirstOrDefaultAsync();
-			if (allowedBooks == null || !allowedBooks.Contains(walletId))
-			{
-				return FieldAccess.Forbidden;
-			}
-		}
-		return FieldAccess.Granted;
+			AccessStatus.Granted => FieldAccess.Granted,
+			AccessStatus.NotFound => FieldAccess.WalletNotFound,
+			_ => FieldAccess.Forbidden
+		};
 	}
 
 	private ActionResult<APIResponse> FieldDenied(FieldAccess access, string message)
@@ -115,7 +99,7 @@ public class CustomFieldController : ControllerBase
 			}
 			// من يقرأ حركات الخزنة يقرأ حقولها: قيم الحقول تُعاد داخل الحركة أصلاً،
 			// فيتعذّر إرجاع القيمة ومنع تعريفها.
-			FieldAccess access = await CheckWalletAccessAsync(callerId.Value, bookId, Roles.TransactionRead);
+			FieldAccess access = await CheckWalletAccessAsync(callerId.Value, bookId, Permissions.BookView);
 			if (access != FieldAccess.Granted)
 			{
 				return FieldDenied(access, "لا تملك صلاحية الوصول إلى حقول هذه الخزنة.");
@@ -169,13 +153,13 @@ public class CustomFieldController : ControllerBase
 				_response.ErrorMessages = new List<string> { "Invalid token." };
 				return Unauthorized(_response);
 			}
-			CustomField customField = await _customFieldRepository.GetAsync((CustomField u) => u.Id == id);
+			CustomField customField = await _customFieldRepository.GetAsync((CustomField u) => u.Id == id && !u.IsArchived);
 			if (customField == null)
 			{
 				_response.StatusCode = HttpStatusCode.NotFound;
 				return NotFound(_response);
 			}
-			FieldAccess access = await CheckWalletAccessAsync(callerId.Value, customField.BookId, Roles.TransactionRead);
+			FieldAccess access = await CheckWalletAccessAsync(callerId.Value, customField.BookId, Permissions.BookView);
 			if (access != FieldAccess.Granted)
 			{
 				return FieldDenied(access, "لا تملك صلاحية الوصول إلى هذا الحقل.");
@@ -216,7 +200,7 @@ public class CustomFieldController : ControllerBase
 				_response.ErrorMessages = new List<string> { "Invalid token." };
 				return Unauthorized(_response);
 			}
-			FieldAccess access = await CheckWalletAccessAsync(callerId.Value, createCustomFieldDto.BookId, Roles.Writers);
+			FieldAccess access = await CheckWalletAccessAsync(callerId.Value, createCustomFieldDto.BookId, Permissions.CustomFieldManage);
 			if (access != FieldAccess.Granted)
 			{
 				return FieldDenied(access, "لا تملك صلاحية إضافة حقل في هذه الخزنة.");
@@ -259,17 +243,17 @@ public class CustomFieldController : ControllerBase
 				_response.ErrorMessages = new List<string> { "Invalid token." };
 				return Unauthorized(_response);
 			}
-			CustomField customField = await _customFieldRepository.GetAsync((CustomField u) => u.Id == id);
+			CustomField customField = await _customFieldRepository.GetAsync((CustomField u) => u.Id == id && !u.IsArchived);
 			if (customField == null)
 			{
 				return NotFound("CustomField not found.");
 			}
-			FieldAccess access = await CheckWalletAccessAsync(callerId.Value, customField.BookId, Roles.Writers);
+			FieldAccess access = await CheckWalletAccessAsync(callerId.Value, customField.BookId, Permissions.CustomFieldManage);
 			if (access != FieldAccess.Granted)
 			{
 				return FieldDenied(access, "لا تملك صلاحية حذف حقل من هذه الخزنة.");
 			}
-			await _customFieldRepository.TrashAsync(customField, callerId);
+			await _customFieldRepository.ArchiveAsync(customField, callerId, HttpContext.Request.Query["reason"].ToString());
 			_response.StatusCode = HttpStatusCode.NoContent;
 			_response.IsSuccess = true;
 			return Ok(_response);
@@ -304,12 +288,12 @@ public class CustomFieldController : ControllerBase
 			{
 				return BadRequest();
 			}
-			CustomField existingCustomField = await _customFieldRepository.GetAsync((CustomField u) => u.Id == id);
+			CustomField existingCustomField = await _customFieldRepository.GetAsync((CustomField u) => u.Id == id && !u.IsArchived);
 			if (existingCustomField == null)
 			{
 				return NotFound("CustomField not found.");
 			}
-			FieldAccess access = await CheckWalletAccessAsync(callerId.Value, existingCustomField.BookId, Roles.Writers);
+			FieldAccess access = await CheckWalletAccessAsync(callerId.Value, existingCustomField.BookId, Permissions.CustomFieldManage);
 			if (access != FieldAccess.Granted)
 			{
 				return FieldDenied(access, "لا تملك صلاحية تعديل حقل في هذه الخزنة.");

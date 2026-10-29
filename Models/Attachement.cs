@@ -4,7 +4,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace cashbook.Models;
 
-public class Attachement
+public class Attachement : IArchivable
 {
 	[Required]
 	[Key]
@@ -25,4 +25,13 @@ public class Attachement
 
 	[Required]
 	public DateTime UpdatedAt { get; set; } = DateTime.Now;
+
+	public bool IsArchived { get; set; }
+
+	public DateTime? ArchivedAt { get; set; }
+
+	public Guid? ArchivedByUserId { get; set; }
+
+	[MaxLength(500)]
+	public string? ArchiveReason { get; set; }
 }

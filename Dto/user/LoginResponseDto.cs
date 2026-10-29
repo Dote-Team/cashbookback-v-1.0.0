@@ -23,6 +23,11 @@ public class LoginResponseDto
 
 	public bool IsSuperAdmin { get; set; }
 
+	/// <summary>1 = سوبر أدمن، 2 = أدمن، 3 = مستخدم.</summary>
+	public int Level { get; set; }
+
+	public string LevelName { get; set; }
+
 	public bool CanManageExchangeRate { get; set; }
 
 	public List<Guid> ExchangeRateBusinessIds { get; set; } = new List<Guid>();

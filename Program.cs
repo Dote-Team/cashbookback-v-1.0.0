@@ -31,6 +31,9 @@ using cashbook.Middleware;
 using cashbook.Models;
 using cashbook.Repositories;
 using cashbook.Services;
+using cashbook.Services.Fingerprint;
+using cashbook.Helper;
+using cashbook.Dto;
 
 [CompilerGenerated]
 internal class Program
@@ -57,6 +60,9 @@ internal class Program
             string generatedSecret = Convert.ToBase64String(secretBytes);
             Console.WriteLine("مفتاح توقيع جديد (ضعه في .env كما هو):");
             Console.WriteLine("ApiSettings__Secret=" + generatedSecret);
+            Console.WriteLine();
+            Console.WriteLine("مفتاح تشفير قوالب البصمات (ضعه في .env كما هو، ولا تغيّره بعد تسجيل البصمات):");
+            Console.WriteLine("Fingerprint__EncryptionKey=" + Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32)));
             return;
         }
         WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
@@ -144,8 +150,19 @@ internal class Program
         builder.Services.AddDbContext<ApplicationDbContext>(delegate (IServiceProvider serviceProvider, DbContextOptionsBuilder option)
         {
             option.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"));
-            option.AddInterceptors(serviceProvider.GetRequiredService<AuditSaveChangesInterceptor>());
+            option.AddInterceptors(serviceProvider.GetRequiredService<NoHardDeleteInterceptor>(), serviceProvider.GetRequiredService<AuditSaveChangesInterceptor>());
         });
+        builder.Services.AddSingleton<NoHardDeleteInterceptor>();
+        builder.Services.AddScoped<IPermissionService, PermissionService>();
+        builder.Services.AddScoped<IUserManagementService, UserManagementService>();
+        builder.Services.AddScoped<ITokenService, TokenService>();
+        builder.Services.Configure<FingerprintSettings>(builder.Configuration.GetSection("Fingerprint"));
+        builder.Services.AddSingleton<IFingerprintMatcher>(delegate (IServiceProvider sp)
+        {
+            string matcher = builder.Configuration.GetValue<string>("Fingerprint:Matcher") ?? "sourceafis";
+            return string.Equals(matcher, "dev", StringComparison.OrdinalIgnoreCase) ? new DevelopmentMatcher() : new SourceAfisMatcher();
+        });
+        builder.Services.AddScoped<IFingerprintService, FingerprintService>();
         builder.Services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
         builder.Services.AddScoped<IBusinessRepository, BusinessRepository>();
         builder.Services.AddScoped<IContactRepository, ContactRepository>();
@@ -156,7 +173,6 @@ internal class Program
         builder.Services.AddScoped<IUserRepository, UserRepository>();
         builder.Services.Configure<MailSettings>(builder.Configuration.GetSection("MailSettings"));
         builder.Services.AddScoped<IEmailService, EmailService>();
-        builder.Services.AddScoped<IBusinessUserRepository, BusinessUserRepository>();
         builder.Services.AddScoped<IPaymentMethodRepository, PaymentMethodRepository>();
         builder.Services.AddScoped<ISettingRepository, SettingRepository>();
         builder.Services.AddScoped<ITransactionHistoryRepository, TransactionHistoryRepository>();
@@ -181,6 +197,27 @@ internal class Program
             options.Limits.MaxRequestBodySize = 209715200L;
         });
         WebApplication app = builder.Build();
+        // معالج أخطاء عام: أي استثناء لم يُلتقط يُسجَّل كاملاً، ويعود للعميل بالبنية المعتادة
+        // ورسالة عامة دون تفاصيل داخلية.
+        app.UseExceptionHandler(delegate (IApplicationBuilder errorApp)
+        {
+            errorApp.Run(async delegate (HttpContext context)
+            {
+                Exception error = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>()?.Error;
+                context.RequestServices.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>()
+                    .CreateLogger("UnhandledException")
+                    .LogError(error, "خطأ غير معالج في {Path}", context.Request.Path);
+                bool blockedDelete = error is InvalidOperationException && error.Message.StartsWith("الحذف غير مسموح");
+                context.Response.StatusCode = blockedDelete ? StatusCodes.Status409Conflict : StatusCodes.Status500InternalServerError;
+                context.Response.ContentType = "application/json; charset=utf-8";
+                await context.Response.WriteAsync(JsonConvert.SerializeObject(new APIResponse
+                {
+                    StatusCode = (System.Net.HttpStatusCode)context.Response.StatusCode,
+                    IsSuccess = false,
+                    ErrorMessages = new List<string> { blockedDelete ? error.Message : ApiErrorSanitizerFilter.GenericMessage }
+                }, new JsonSerializerSettings { ContractResolver = new CamelCasePropertyNamesContractResolver() }));
+            });
+        });
         app.UseCors("AllowConfiguredOrigins");
         string rootFolder = Path.Combine(app.Environment.ContentRootPath, "wwwroot", "uploads");
         if (!Directory.Exists(rootFolder))
@@ -189,14 +226,24 @@ internal class Program
         }
         app.MapGet("/API/Files/{imageName}", (Func<string, IResult>)delegate (string imageName)
         {
+            // اسم الملف وحده، بلا أي مسار: يمنع الخروج من مجلد الرفع.
+            string safeName = Path.GetFileName(imageName ?? string.Empty);
             string contentRootPath = app.Environment.ContentRootPath;
-            string path = Path.Combine(contentRootPath, "wwwroot", "uploads", imageName);
-            if (!File.Exists(path))
+            string path = Path.Combine(contentRootPath, "wwwroot", "uploads", safeName);
+            if (string.IsNullOrEmpty(safeName) || !File.Exists(path))
             {
                 return Results.NotFound("Image not found.");
             }
-            string text = Path.GetExtension(imageName).TrimStart('.');
-            string contentType = "image/" + text;
+            string contentType = Path.GetExtension(safeName).ToLowerInvariant() switch
+            {
+                ".jpg" or ".jpeg" => "image/jpeg",
+                ".png" => "image/png",
+                ".gif" => "image/gif",
+                ".webp" => "image/webp",
+                ".bmp" => "image/bmp",
+                ".pdf" => "application/pdf",
+                _ => "application/octet-stream"
+            };
             return Results.File(path, contentType);
         }).WithDisplayName("ShowImage");
         if (app.Environment.IsDevelopment())
@@ -239,12 +286,35 @@ internal class Program
                 {
                     admin = await dbContext.Users.FirstOrDefaultAsync((User u) => u.Email.ToLower() == emailLower);
                 }
-                if (admin != null && !admin.IsSuperAdmin)
+                // السوبر أدمن الرئيسي موجود دائماً في قاعدة البيانات: يُرقّى الحساب المحدد إن وُجد،
+                // ويُنشأ بكلمة المرور من .env (AdminUser__Password) إن لم يوجد بعد.
+                string adminPassword = app.Configuration.GetValue<string>("AdminUser:Password");
+                if (admin == null && hasUsername && !string.IsNullOrWhiteSpace(adminPassword))
+                {
+                    if (!PasswordPolicy.IsValid(adminPassword, out string passwordError))
+                    {
+                        throw new InvalidOperationException("كلمة مرور السوبر أدمن (AdminUser__Password) لا تحقق سياسة كلمات المرور: " + passwordError);
+                    }
+                    admin = new User
+                    {
+                        Username = adminUsername.Trim(),
+                        Name = adminUsername.Trim(),
+                        Email = hasEmail ? adminEmail.Trim() : adminUsername.Trim().ToLowerInvariant() + "@local.invalid",
+                        Password = BCrypt.Net.BCrypt.HashPassword(adminPassword),
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow
+                    };
+                    dbContext.Users.Add(admin);
+                }
+                if (admin != null && (!admin.IsSuperAdmin || admin.Level != UserLevels.SuperAdmin || !admin.IsHidden || !admin.IsActive))
                 {
                     admin.IsSuperAdmin = true;
-                    admin.UpdatedAt = DateTime.Now;
-                    await dbContext.SaveChangesAsync();
+                    admin.Level = UserLevels.SuperAdmin;
+                    admin.IsHidden = true;
+                    admin.IsActive = true;
+                    admin.UpdatedAt = DateTime.UtcNow;
                 }
+                await dbContext.SaveChangesAsync();
             }
         }
         app.Run();

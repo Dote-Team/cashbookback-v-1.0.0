@@ -26,7 +26,7 @@ public class ContactRepository : Repository<Contact>, IContactRepository, IRepos
 	{
 		int currentPage = skip ?? 1;
 		int currentPageSize = take ?? 25;
-		IQueryable<Contact> query = _context.Contacts.Where((Contact b) => b.BusinessId == businessId);
+		IQueryable<Contact> query = _context.Contacts.Where((Contact b) => b.BusinessId == businessId && !b.IsArchived);
 		if (!string.IsNullOrWhiteSpace(search))
 		{
 			query = query.Where((Contact b) => b.Name.Contains(search));

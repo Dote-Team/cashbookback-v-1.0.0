@@ -46,20 +46,27 @@ public class TransactionRepository : Repository<Transaction>, ITransactionReposi
 
     public async Task<bool> CreateTransactionAsync(CreateTransactionDto dto, Guid userId)
     {
+        // تحليل آمن: الصيغة المعطوبة لا تُحوّل إلى خطأ خادم.
+        // المدقّق يردّ بـ400 قبل الوصول إلى هنا، وهذه حراسة ثانية في العمق.
+        CustomFieldValuesParser.TryParse(dto.CustomFieldValues, out List<CustomFieldValueCreateDto> customFieldValues, out _);
+        string normalizedType = TransactionTypes.Normalize(dto.Type) ?? dto.Type;
+        bool isUsd = dto.Currency == CurrencyCode.USD;
+        decimal? exchangeRate = (isUsd ? dto.ExchangeRate : ((decimal?)null));
+        DateTime? exchangeDate = ((isUsd && normalizedType != "cash out") ? dto.ExchangeDate : ((DateTime?)null));
+        // الملفات تُرفع أولاً، ثم يُحفظ القيد بمرفقاته وقيمه وسجله في عملية حفظ واحدة:
+        // إما أن يُحفظ كل شيء أو لا شيء، فلا يبقى قيد ناقص بلا سجل أو بلا حقوله.
+        List<string> uploaded = new List<string>();
+        if (dto.Files != null && dto.Files.Any())
+        {
+            uploaded = await UploadFilesAsync(dto.Files, UploadsFolder);
+        }
         try
         {
-            // تحليل آمن: الصيغة المعطوبة لا تُحوّل إلى خطأ خادم.
-            // المدقّق يردّ بـ400 قبل الوصول إلى هنا، وهذه حراسة ثانية في العمق.
-            CustomFieldValuesParser.TryParse(dto.CustomFieldValues, out List<CustomFieldValueCreateDto> customFieldValues, out _);
-            string normalizedType = TransactionTypes.Normalize(dto.Type) ?? dto.Type;
-            bool isUsd = dto.Currency == CurrencyCode.USD;
-            decimal? exchangeRate = (isUsd ? dto.ExchangeRate : ((decimal?)null));
-            DateTime? exchangeDate = ((isUsd && normalizedType != "cash out") ? dto.ExchangeDate : ((DateTime?)null));
             Transaction transaction = new Transaction
             {
                 Type = normalizedType,
                 Date = dto.Date,
-                Description = ((dto.Description != null) ? dto.Description : null),
+                Description = dto.Description,
                 Amount = dto.Amount,
                 Currency = dto.Currency,
                 ExchangeRate = exchangeRate,
@@ -71,138 +78,102 @@ public class TransactionRepository : Repository<Transaction>, ITransactionReposi
                 UserId = userId
             };
             _context.Transactions.Add(transaction);
-            await _context.SaveChangesAsync();
-            if (customFieldValues?.Any() ?? false)
+            foreach (CustomFieldValueCreateDto cfvDto in customFieldValues ?? new List<CustomFieldValueCreateDto>())
             {
-                IEnumerable<CustomFieldValue> entities = customFieldValues.Select((CustomFieldValueCreateDto cfvDto) => new CustomFieldValue
+                _context.CustomFieldValues.Add(new CustomFieldValue
                 {
                     Value = cfvDto.Value,
                     CustomFieldId = cfvDto.CustomFieldId,
                     TransactionId = transaction.Id
                 });
-                await _context.CustomFieldValues.AddRangeAsync(entities);
-                await _context.SaveChangesAsync();
             }
-            if (dto.Files != null && dto.Files.Any())
+            foreach (string fileName in uploaded)
             {
-                foreach (string fileName in await UploadFilesAsync(uploadPath: Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads"), files: dto.Files))
+                _context.Attachements.Add(new Attachement
                 {
-                    Attachement attachment = new Attachement
-                    {
-                        Files = fileName,
-                        TransactionId = transaction.Id
-                    };
-                    _context.Attachements.Add(attachment);
-                }
-                await _context.SaveChangesAsync();
+                    Files = fileName,
+                    TransactionId = transaction.Id
+                });
             }
-            TransactionHistory transactionHistory = new TransactionHistory
+            _context.TransactionHistories.Add(new TransactionHistory
             {
                 Operation = "POST",
-                Description = ((dto.Description != null) ? dto.Description : null),
+                Description = dto.Description,
                 Amount = dto.Amount,
                 Type = transaction.Type,
                 ExchangeRate = transaction.ExchangeRate,
                 ExchangeDate = transaction.ExchangeDate,
-                From = null,
-                To = null,
                 TransactionId = transaction.Id,
                 BookId = dto.BookId,
                 UserId = userId
-            };
-            _context.TransactionHistories.Add(transactionHistory);
+            });
             await _context.SaveChangesAsync();
             return true;
         }
         catch (Exception ex)
         {
-            Exception ex2 = ex;
-            throw new InvalidOperationException("تعذ\u0651ر حفظ الحركة. تحقق من البيانات وحاول مرة أخرى.", ex2);
+            DeleteUploadedFiles(uploaded);
+            throw new InvalidOperationException("تعذّر حفظ الحركة. تحقق من البيانات وحاول مرة أخرى.", ex);
         }
     }
 
-    public async Task<bool> DeleteTransactionAsync(Guid transactionId, Guid? deletedByUserId = null)
+    /// <summary>
+    /// أرشفة قيد دون رجعة: يختفي من القوائم والأرصدة ويبقى في قاعدة البيانات بمرفقاته.
+    /// يُسجَّل في سجل الحركات باسم من نفّذ الأرشفة فعلاً.
+    /// </summary>
+    public async Task<bool> ArchiveTransactionAsync(Guid transactionId, Guid archivedByUserId, string? reason = null)
     {
-        Transaction transaction = await _context.Transactions.Include((Transaction t) => t.CustomFieldValues).Include((Transaction t) => t.Attachements).FirstOrDefaultAsync((Transaction t) => t.Id == transactionId);
+        Transaction transaction = await _context.Transactions.FirstOrDefaultAsync((Transaction t) => t.Id == transactionId);
         if (transaction == null)
         {
             return false;
         }
-        bool moveToTrash = deletedByUserId.HasValue;
-        TrashRelatedData related = new TrashRelatedData();
-        TransactionHistory transactionHistory = new TransactionHistory
+        transaction.IsArchived = true;
+        transaction.ArchivedAt = DateTime.UtcNow;
+        transaction.ArchivedByUserId = archivedByUserId;
+        transaction.ArchiveReason = ArchiveText.Reason(reason);
+        transaction.UpdatedAt = DateTime.UtcNow;
+        _context.TransactionHistories.Add(new TransactionHistory
         {
-            Id = Guid.NewGuid(),
-            Operation = "DELETE",
+            Operation = "ARCHIVE",
             Description = transaction.Description,
             Amount = transaction.Amount,
             Type = transaction.Type,
             ExchangeRate = transaction.ExchangeRate,
             ExchangeDate = transaction.ExchangeDate,
-            From = null,
-            To = null,
-            TransactionId = null,
+            TransactionId = transaction.Id,
             BookId = transaction.BookId,
-            UserId = transaction.UserId,
+            UserId = archivedByUserId,
             CreatedAt = DateTime.UtcNow
-        };
-        _context.TransactionHistories.Add(transactionHistory);
-        if (moveToTrash)
-        {
-            // نسخة كاملة كي ترجع الحركة بمرفقاتها وقيم حقولها عند الاستعادة.
-            TrashHelper.AddRows(related, "Attachements", transaction.Attachements);
-            TrashHelper.AddRows(related, "CustomFieldValues", transaction.CustomFieldValues);
-            TrashHelper.AddDeleteRow(related, "TransactionHistories", new Dictionary<string, object> { ["Id"] = transactionHistory.Id });
-        }
-        string uploadsFolder = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads");
-        if (transaction.Attachements != null && transaction.Attachements.Any())
-        {
-            foreach (Attachement attachment in transaction.Attachements)
-            {
-                if (string.IsNullOrEmpty(attachment.Files))
-                {
-                    continue;
-                }
-                // الملفات تبقى على القرص حتى الحذف النهائي، وإلا تعذّرت الاستعادة.
-                if (moveToTrash)
-                {
-                    continue;
-                }
-                string filePath = Path.Combine(uploadsFolder, attachment.Files);
-                if (File.Exists(filePath))
-                {
-                    try
-                    {
-                        File.Delete(filePath);
-                    }
-                    catch (Exception ex)
-                    {
-                        Exception ex2 = ex;
-                        Console.WriteLine("Failed to delete file " + attachment.Files + ": " + ex2.Message);
-                    }
-                }
-            }
-            _context.Attachements.RemoveRange(transaction.Attachements);
-        }
-        if (transaction.CustomFieldValues != null && transaction.CustomFieldValues.Any())
-        {
-            _context.CustomFieldValues.RemoveRange(transaction.CustomFieldValues);
-        }
-        if (moveToTrash)
-        {
-            TrashItem trashItem = TrashHelper.Build(transaction, deletedByUserId);
-            trashItem.RelatedJson = TrashHelper.Serialize(related);
-            _context.TrashItems.Add(trashItem);
-        }
-        _context.Transactions.Remove(transaction);
+        });
         await _context.SaveChangesAsync();
         return true;
+    }
+
+    private static string UploadsFolder => Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads");
+
+    private static void DeleteUploadedFiles(IEnumerable<string> fileNames)
+    {
+        foreach (string fileName in fileNames)
+        {
+            try
+            {
+                string path = Path.Combine(UploadsFolder, fileName);
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+            }
+            catch (IOException)
+            {
+            }
+        }
     }
 
     public async Task<PaginatedResponse<TransactionDto>> GetAllTransactionsByBookIdAsync(Guid bookId, int? skip = 1, int? take = 25, decimal? amount = null, string searchCategory = null, string searchContact = null, string searchPaymentMethod = null, string searchType = null, string searchUser = null, DateTime? startDate = null, DateTime? endDate = null, SortField? sortBy = null, SortDirection? sortDirection = SortDirection.asc)
     {
         int currentPage = Math.Max(1, skip ?? 1);
-        int currentSize = take ?? 25;
+        int currentSize = Math.Min(take ?? 25, 500);
         if (currentSize <= 0)
         {
             return new PaginatedResponse<TransactionDto>
@@ -214,7 +185,7 @@ public class TransactionRepository : Repository<Transaction>, ITransactionReposi
             };
         }
         List<object> parameters = new List<object>();
-        List<string> filters = new List<string> { "t.BookId = " + Param(bookId) };
+        List<string> filters = new List<string> { "t.BookId = " + Param(bookId), "t.IsArchived = 0" };
         if (amount.HasValue)
         {
             filters.Add("t.Amount = " + Param(amount.Value));
@@ -249,7 +220,10 @@ public class TransactionRepository : Repository<Transaction>, ITransactionReposi
             filters.Add("t.Date <= " + Param(endDate.Value));
         }
         string whereSql = "WHERE " + string.Join("\n  AND ", filters);
-        int totalRecords = await ExecuteScalarIntAsync("SELECT COUNT(*) FROM Transactions t \nLEFT JOIN Categories     c  ON c.Id  = t.CategoryId\nLEFT JOIN Contacts       co ON co.Id = t.ContactId\nLEFT JOIN PaymentMethods pm ON pm.Id = t.PaymentMethodId\nLEFT JOIN Users          u  ON u.Id  = t.UserId\n" + whereSql, parameters);
+        // الربط بالجداول الأخرى لا يلزم للعدّ إلا عند البحث بأسمائها.
+        bool needsJoins = !string.IsNullOrEmpty(searchCategory) || !string.IsNullOrEmpty(searchContact) || !string.IsNullOrEmpty(searchPaymentMethod) || !string.IsNullOrEmpty(searchUser);
+        string countJoins = needsJoins ? "LEFT JOIN Categories     c  ON c.Id  = t.CategoryId\nLEFT JOIN Contacts       co ON co.Id = t.ContactId\nLEFT JOIN PaymentMethods pm ON pm.Id = t.PaymentMethodId\nLEFT JOIN Users          u  ON u.Id  = t.UserId\n" : string.Empty;
+        int totalRecords = await ExecuteScalarIntAsync("SELECT COUNT(*) FROM Transactions t \n" + countJoins + whereSql, parameters);
         if (1 == 0)
         {
         }
@@ -367,7 +341,7 @@ public class TransactionRepository : Repository<Transaction>, ITransactionReposi
         }
         string orderSql = text;
         int offset = (currentPage - 1) * currentSize;
-        string pageSql = $"\n;WITH src AS (\n    SELECT t.Id AS Id, t.Date AS TDate,\n           CASE WHEN t.Currency <> N'USD' AND t.Type = N'cash in'  THEN t.Amount\n                WHEN t.Currency <> N'USD' AND t.Type = N'cash out' THEN -t.Amount\n                ELSE CAST(0 AS decimal(18,3)) END AS dIqd,\n           CASE WHEN t.Currency = N'USD' AND t.Type = N'cash in'  THEN t.Amount\n                WHEN t.Currency = N'USD' AND t.Type = N'cash out' THEN -t.Amount\n                ELSE CAST(0 AS decimal(18,3)) END AS dUsd\n    FROM Transactions t\n    WHERE t.BookId = @p0\n),\nrun AS (\n    SELECT Id,\n           SUM(dIqd) OVER (ORDER BY TDate, Id ROWS UNBOUNDED PRECEDING) AS RunIqd,\n           SUM(dUsd) OVER (ORDER BY TDate, Id ROWS UNBOUNDED PRECEDING) AS RunUsd\n    FROM src\n)\nSELECT r.Id, r.RunIqd, r.RunUsd\nFROM run r\nINNER JOIN Transactions t ON t.Id = r.Id\n{"\nLEFT JOIN Categories     c  ON c.Id  = t.CategoryId\nLEFT JOIN Contacts       co ON co.Id = t.ContactId\nLEFT JOIN PaymentMethods pm ON pm.Id = t.PaymentMethodId\nLEFT JOIN Users          u  ON u.Id  = t.UserId"}\n{whereSql}\nORDER BY {orderSql}\nOFFSET {offset} ROWS FETCH NEXT {currentSize} ROWS ONLY";
+        string pageSql = $"\n;WITH src AS (\n    SELECT t.Id AS Id, t.Date AS TDate,\n           CASE WHEN t.Currency <> N'USD' AND t.Type = N'cash in'  THEN t.Amount\n                WHEN t.Currency <> N'USD' AND t.Type = N'cash out' THEN -t.Amount\n                ELSE CAST(0 AS decimal(18,3)) END AS dIqd,\n           CASE WHEN t.Currency = N'USD' AND t.Type = N'cash in'  THEN t.Amount\n                WHEN t.Currency = N'USD' AND t.Type = N'cash out' THEN -t.Amount\n                ELSE CAST(0 AS decimal(18,3)) END AS dUsd\n    FROM Transactions t\n    WHERE t.BookId = @p0 AND t.IsArchived = 0\n),\nrun AS (\n    SELECT Id,\n           SUM(dIqd) OVER (ORDER BY TDate, Id ROWS UNBOUNDED PRECEDING) AS RunIqd,\n           SUM(dUsd) OVER (ORDER BY TDate, Id ROWS UNBOUNDED PRECEDING) AS RunUsd\n    FROM src\n)\nSELECT r.Id, r.RunIqd, r.RunUsd\nFROM run r\nINNER JOIN Transactions t ON t.Id = r.Id\n{"\nLEFT JOIN Categories     c  ON c.Id  = t.CategoryId\nLEFT JOIN Contacts       co ON co.Id = t.ContactId\nLEFT JOIN PaymentMethods pm ON pm.Id = t.PaymentMethodId\nLEFT JOIN Users          u  ON u.Id  = t.UserId"}\n{whereSql}\nORDER BY {orderSql}\nOFFSET {offset} ROWS FETCH NEXT {currentSize} ROWS ONLY";
         List<RunningRow> pageRows = await ExecuteRunningRowsAsync(pageSql, parameters);
         List<Guid> pageIds = pageRows.Select((RunningRow r) => r.Id).ToList();
         List<Transaction> list = ((pageIds.Count != 0) ? (await (from transaction in _context.Transactions.AsNoTracking().AsSplitQuery()
@@ -596,7 +570,7 @@ public class TransactionRepository : Repository<Transaction>, ITransactionReposi
                        }).ToList();
     }
 
-    public async Task<bool> UpdateTransactionAsync(UpdateTransactionDto dto, Guid Id)
+    public async Task<bool> UpdateTransactionAsync(UpdateTransactionDto dto, Guid Id, Guid editorUserId)
     {
         try
         {
@@ -641,44 +615,27 @@ public class TransactionRepository : Repository<Transaction>, ITransactionReposi
                 });
                 await _context.CustomFieldValues.AddRangeAsync(newCustomFieldValues);
             }
+            List<string> uploaded = new List<string>();
             if (dto.Files != null && dto.Files.Any())
             {
-                string uploadPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads");
-                if (transaction.Attachements != null && transaction.Attachements.Any())
+                // المرفقات القديمة تُؤرشف ولا تُحذف ملفاتها، فلا يضيع شيء لو فشل الحفظ.
+                foreach (Attachement old in transaction.Attachements ?? new List<Attachement>())
                 {
-                    foreach (Attachement attachment in transaction.Attachements)
-                    {
-                        if (string.IsNullOrEmpty(attachment.Files))
-                        {
-                            continue;
-                        }
-                        string filePath = Path.Combine(uploadPath, attachment.Files);
-                        if (File.Exists(filePath))
-                        {
-                            try
-                            {
-                                File.Delete(filePath);
-                            }
-                            catch (Exception ex)
-                            {
-                                Exception ex2 = ex;
-                                Console.WriteLine("Failed to delete file " + attachment.Files + ": " + ex2.Message);
-                            }
-                        }
-                    }
-                    _context.Attachements.RemoveRange(transaction.Attachements);
+                    old.IsArchived = true;
+                    old.ArchivedAt = DateTime.UtcNow;
+                    old.ArchivedByUserId = editorUserId;
+                    old.ArchiveReason = "استُبدل بمرفق جديد عند تعديل القيد";
                 }
-                foreach (string fileName in await UploadFilesAsync(dto.Files, uploadPath))
+                uploaded = await UploadFilesAsync(dto.Files, UploadsFolder);
+                foreach (string fileName in uploaded)
                 {
-                    Attachement attachment2 = new Attachement
+                    _context.Attachements.Add(new Attachement
                     {
                         Files = fileName,
                         TransactionId = transaction.Id
-                    };
-                    _context.Attachements.Add(attachment2);
+                    });
                 }
             }
-            await _context.SaveChangesAsync();
             if (transaction.Amount != oldAmount || transaction.Currency != oldCurrency || !string.Equals(transaction.Type, oldType, StringComparison.OrdinalIgnoreCase) || !(transaction.ExchangeRate == oldRate) || transaction.ExchangeDate != oldExchangeDate)
             {
                 TransactionHistory transactionHistory = new TransactionHistory
@@ -693,10 +650,18 @@ public class TransactionRepository : Repository<Transaction>, ITransactionReposi
                     ExchangeDate = transaction.ExchangeDate,
                     TransactionId = transaction.Id,
                     BookId = transaction.BookId,
-                    UserId = transaction.UserId
+                    UserId = editorUserId
                 };
                 _context.TransactionHistories.Add(transactionHistory);
+            }
+            try
+            {
                 await _context.SaveChangesAsync();
+            }
+            catch
+            {
+                DeleteUploadedFiles(uploaded);
+                throw;
             }
             return true;
         }
@@ -707,13 +672,14 @@ public class TransactionRepository : Repository<Transaction>, ITransactionReposi
         }
     }
 
-    public async Task<Guid> DuplicateTransactionToAnotherBookAsync(Guid transactionId, Guid targetBookId)
+    public async Task<Guid> DuplicateTransactionToAnotherBookAsync(Guid transactionId, Guid targetBookId, Guid userId)
     {
         Transaction transaction = await _context.Transactions.Include((Transaction t) => t.CustomFieldValues).Include((Transaction t) => t.Attachements).FirstOrDefaultAsync((Transaction t) => t.Id == transactionId);
         if (transaction == null)
         {
             throw new InvalidOperationException("Transaction not found");
         }
+        // سعر الصرف وتاريخه يُنسخان أيضاً: نسخ حركة دولار بدونهما يُفسد حسابات التحويل.
         Transaction newTransaction = new Transaction
         {
             Type = transaction.Type,
@@ -721,52 +687,66 @@ public class TransactionRepository : Repository<Transaction>, ITransactionReposi
             Description = transaction.Description,
             Amount = transaction.Amount,
             Currency = transaction.Currency,
+            ExchangeRate = transaction.ExchangeRate,
+            ExchangeDate = transaction.ExchangeDate,
             CategoryId = transaction.CategoryId,
             ContactId = transaction.ContactId,
             PaymentMethodId = transaction.PaymentMethodId,
-            UserId = transaction.UserId,
+            UserId = userId,
             BookId = targetBookId
         };
-        await _context.Transactions.AddAsync(newTransaction);
-        await _context.SaveChangesAsync();
-        if (transaction.CustomFieldValues != null && transaction.CustomFieldValues.Any())
+        _context.Transactions.Add(newTransaction);
+        foreach (CustomFieldValue cf in transaction.CustomFieldValues ?? new List<CustomFieldValue>())
         {
-            List<CustomFieldValue> newCustomFields = transaction.CustomFieldValues.Select((CustomFieldValue cf) => new CustomFieldValue
+            _context.CustomFieldValues.Add(new CustomFieldValue
             {
                 Value = cf.Value,
                 CustomFieldId = cf.CustomFieldId,
                 TransactionId = newTransaction.Id
-            }).ToList();
-            await _context.CustomFieldValues.AddRangeAsync(newCustomFields);
+            });
         }
-        if (transaction.Attachements != null && transaction.Attachements.Any())
+        List<string> copied = new List<string>();
+        foreach (Attachement att in transaction.Attachements ?? new List<Attachement>())
         {
-            string uploadsFolder = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads");
-            List<Attachement> newAttachments = new List<Attachement>();
-            foreach (Attachement att in transaction.Attachements)
+            if (string.IsNullOrWhiteSpace(att.Files))
             {
-                if (!string.IsNullOrWhiteSpace(att.Files))
-                {
-                    string originalFilePath = Path.Combine(uploadsFolder, att.Files);
-                    if (File.Exists(originalFilePath))
-                    {
-                        string newFileName = $"{Guid.NewGuid()}{Path.GetExtension(att.Files)}";
-                        string newFilePath = Path.Combine(uploadsFolder, newFileName);
-                        File.Copy(originalFilePath, newFilePath);
-                        newAttachments.Add(new Attachement
-                        {
-                            Files = newFileName,
-                            TransactionId = newTransaction.Id
-                        });
-                    }
-                }
+                continue;
             }
-            if (newAttachments.Any())
+            string originalFilePath = Path.Combine(UploadsFolder, Path.GetFileName(att.Files));
+            if (!File.Exists(originalFilePath))
             {
-                await _context.Attachements.AddRangeAsync(newAttachments);
+                continue;
             }
+            string newFileName = $"{Guid.NewGuid()}{Path.GetExtension(att.Files)}";
+            File.Copy(originalFilePath, Path.Combine(UploadsFolder, newFileName));
+            copied.Add(newFileName);
+            _context.Attachements.Add(new Attachement
+            {
+                Files = newFileName,
+                TransactionId = newTransaction.Id
+            });
         }
-        await _context.SaveChangesAsync();
+        _context.TransactionHistories.Add(new TransactionHistory
+        {
+            Operation = "POST",
+            Description = newTransaction.Description,
+            Amount = newTransaction.Amount,
+            Type = newTransaction.Type,
+            ExchangeRate = newTransaction.ExchangeRate,
+            ExchangeDate = newTransaction.ExchangeDate,
+            TransactionId = newTransaction.Id,
+            BookId = targetBookId,
+            UserId = userId
+        });
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch
+        {
+            DeleteUploadedFiles(copied);
+            throw;
+        }
         return newTransaction.Id;
     }
 }

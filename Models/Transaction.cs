@@ -6,7 +6,7 @@ using cashbook.Models.Enums;
 
 namespace cashbook.Models;
 
-public class Transaction
+public class Transaction : IArchivable
 {
 	[Required]
 	[Key]
@@ -66,4 +66,13 @@ public class Transaction
 	public ICollection<Attachement> Attachements { get; set; }
 
 	public ICollection<TransactionHistory> TransactionHistories { get; set; }
+
+	public bool IsArchived { get; set; }
+
+	public DateTime? ArchivedAt { get; set; }
+
+	public Guid? ArchivedByUserId { get; set; }
+
+	[MaxLength(500)]
+	public string? ArchiveReason { get; set; }
 }

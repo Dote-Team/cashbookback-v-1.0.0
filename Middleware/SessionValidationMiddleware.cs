@@ -39,9 +39,20 @@ public class SessionValidationMiddleware
                 return;
             }
 
-            var session = await dbContext.Sessions.FirstOrDefaultAsync(s => s.Id == sessionId && s.UserId == userId);
+            // رمز التحديث لا يصلح للدخول إلى الـ API، ولو كان موقّعاً وصالح المدة.
+            if (context.User.FindFirst(TokenService.TokenTypeClaim)?.Value != TokenService.AccessTokenType)
+            {
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                await context.Response.WriteAsync("Invalid token type.");
+                return;
+            }
 
-            if (session == null || (session.ExpiredAt != null && session.ExpiredAt < DateTime.UtcNow))
+            var session = await dbContext.Sessions
+                .Where(s => s.Id == sessionId && s.UserId == userId)
+                .Select(s => new { s.Id, s.ExpiredAt, s.DeviceToken, UserActive = s.User.IsActive })
+                .FirstOrDefaultAsync();
+
+            if (session == null || session.ExpiredAt < DateTime.UtcNow || !session.UserActive)
             {
                 context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                 await context.Response.WriteAsync("Session expired or not found.");

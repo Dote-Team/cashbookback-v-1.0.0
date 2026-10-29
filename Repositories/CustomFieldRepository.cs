@@ -26,7 +26,7 @@ public class CustomFieldRepository : Repository<CustomField>, ICustomFieldReposi
 	{
 		int currentPage = skip ?? 1;
 		int currentPageSize = take ?? 25;
-		IQueryable<CustomField> query = _context.CustomFields.Where((CustomField b) => b.BookId == bookId);
+		IQueryable<CustomField> query = _context.CustomFields.Where((CustomField b) => b.BookId == bookId && !b.IsArchived);
 		if (!string.IsNullOrWhiteSpace(search))
 		{
 			query = query.Where((CustomField b) => b.Key.Contains(search));

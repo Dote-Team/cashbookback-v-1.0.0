@@ -5,7 +5,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace cashbook.Models;
 
-public class Business
+public class Business : IArchivable
 {
 	[Required]
 	[Key]
@@ -30,4 +30,13 @@ public class Business
 	public ICollection<Book> Books { get; set; }
 
 	public ICollection<BusinessUser> BusinessUsers { get; set; }
+
+	public bool IsArchived { get; set; }
+
+	public DateTime? ArchivedAt { get; set; }
+
+	public Guid? ArchivedByUserId { get; set; }
+
+	[MaxLength(500)]
+	public string? ArchiveReason { get; set; }
 }

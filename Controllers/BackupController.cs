@@ -14,6 +14,7 @@ using cashbook.Dto;
 using cashbook.Dto.backup;
 using cashbook.Helper;
 using cashbook.Interfaces;
+using cashbook.Services;
 using cashbook.Models;
 
 namespace cashbook.Controllers;
@@ -31,8 +32,11 @@ public class BackupController : ControllerBase
 
 	private readonly ApplicationDbContext _context;
 
-	public BackupController(IBackupService backupService, ApplicationDbContext context)
+	private readonly IPermissionService _permissions;
+
+	public BackupController(IBackupService backupService, ApplicationDbContext context, IPermissionService permissions)
 	{
+		_permissions = permissions;
 		_backupService = backupService;
 		_context = context;
 		_response = new APIResponse();
@@ -57,14 +61,6 @@ public class BackupController : ControllerBase
 		_response.IsSuccess = false;
 		_response.ErrorMessages = new List<string> { message };
 		return StatusCode((int)status, _response);
-	}
-
-	private async Task<bool> IsManagementAsync(Guid userId, Guid businessId)
-	{
-		string role = await (from bu in _context.BusinessUsers
-			where bu.UserId == userId && bu.BusinessId == businessId
-			select bu.Role.ToLower()).FirstOrDefaultAsync();
-		return role != null && Enumerable.Contains(Roles.Management, role);
 	}
 
 	private static string BuildFileName(string bookName)
@@ -107,7 +103,7 @@ public class BackupController : ControllerBase
 			{
 				return FailRaw(HttpStatusCode.NotFound, "الخزنة غير موجودة.");
 			}
-			if (!(await IsManagementAsync(userId, book.BusinessId)))
+			if (!await _permissions.HasAsync(userId, book.Id, Permissions.TransactionExport))
 			{
 				return FailRaw(HttpStatusCode.Forbidden, "لا تملك صلاحية تصدير هذه الخزنة.");
 			}
@@ -195,9 +191,19 @@ public class BackupController : ControllerBase
 			{
 				return Fail(HttpStatusCode.BadRequest, "حجم الملف يتجاوز الحد المسموح.");
 			}
-			if (!(await IsManagementAsync(userId, businessId)))
+			// الاستيراد إلى خزنة قائمة يحتاج صلاحية الاستيراد عليها، وإلى خزنة جديدة يعني إنشاء خزنة:
+			// والإنشاء للسوبر أدمن وحده.
+			if (request?.TargetBookId is Guid targetBookId && targetBookId != Guid.Empty)
 			{
-				return Fail(HttpStatusCode.Forbidden, "لا تملك صلاحية الاستيراد في هذه المنشأة.");
+				if (!await _permissions.HasAsync(userId, targetBookId, Permissions.BackupImport)
+					|| !await _context.Books.AnyAsync(b => b.Id == targetBookId && b.BusinessId == businessId))
+				{
+					return Fail(HttpStatusCode.Forbidden, "لا تملك صلاحية الاستيراد إلى هذه الخزنة.");
+				}
+			}
+			else if (!await _permissions.IsSuperAdminAsync(userId))
+			{
+				return Fail(HttpStatusCode.Forbidden, "الاستيراد إلى خزنة جديدة للسوبر أدمن فقط، اختر خزنة قائمة.");
 			}
 			using Stream stream = file.OpenReadStream();
 			BackupImportResultDto result = await _backupService.ImportAsync(stream, request?.Password ?? string.Empty, businessId, request?.TargetBookId, request?.NewBookName, userId);

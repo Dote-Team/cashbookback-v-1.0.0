@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using cashbook.Dto;
 using cashbook.Dto.Book;
@@ -10,13 +11,13 @@ namespace cashbook.Interfaces;
 
 public interface IBookRepository : IRepository<Book>
 {
-	Task<PaginatedResponse<BookDto>> GetBooksAsync(Guid businessId, Guid userId, int? skip = 1, int? take = 25, string search = null, SortField? sortBy = null, SortDirection? sortDirection = SortDirection.desc);
+	Task<PaginatedResponse<BookDto>> GetBooksAsync(Guid businessId, List<Guid>? allowedBookIds, int? skip = 1, int? take = 25, string search = null, SortField? sortBy = null, SortDirection? sortDirection = SortDirection.desc);
 
 	Task<bool> CreateBookAsync(CreateBookDto createBookDto);
 
-	Task<BookDetailsDto?> GetBookDetailsByIdAsync(Guid bookId, Guid userId);
+	Task<BookDetailsDto?> GetBookDetailsByIdAsync(Guid bookId);
 
-	Task<bool> DeleteBookAsync(Guid bookId, Guid? deletedByUserId = null);
+	Task<bool> ArchiveBookAsync(Guid bookId, Guid archivedByUserId, string? reason = null);
 
 	Task<bool> UpdateSettingAsync(Guid bookId, UpdateSettingDto dto);
 }

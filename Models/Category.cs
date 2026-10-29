@@ -5,7 +5,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace cashbook.Models;
 
-public class Category
+public class Category : IArchivable, IBusinessScoped
 {
 	[Required]
 	[Key]
@@ -27,4 +27,13 @@ public class Category
 	public DateTime UpdatedAt { get; set; } = DateTime.Now;
 
 	public ICollection<Transaction> Transactions { get; set; }
+
+	public bool IsArchived { get; set; }
+
+	public DateTime? ArchivedAt { get; set; }
+
+	public Guid? ArchivedByUserId { get; set; }
+
+	[MaxLength(500)]
+	public string? ArchiveReason { get; set; }
 }

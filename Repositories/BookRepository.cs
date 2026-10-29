@@ -54,45 +54,15 @@ public class BookRepository : Repository<Book>, IBookRepository, IRepository<Boo
 		}
 	}
 
-	public async Task<PaginatedResponse<BookDto>> GetBooksAsync(Guid businessId, Guid userId, int? skip = 1, int? take = 25, string search = null, SortField? sortBy = null, SortDirection? sortDirection = SortDirection.desc)
+	/// <param name="allowedBookIds">الخزائن التي يملك المستخدم عرضها، أو null للسوبر أدمن (كل خزائن المنشأة).</param>
+	public async Task<PaginatedResponse<BookDto>> GetBooksAsync(Guid businessId, List<Guid>? allowedBookIds, int? skip = 1, int? take = 25, string search = null, SortField? sortBy = null, SortDirection? sortDirection = SortDirection.desc)
 	{
-		int currentPage = skip ?? 1;
-		int currentPageSize = take ?? 25;
-		var businessUser = await (from bu in _context.BusinessUsers
-			where bu.BusinessId == businessId && bu.UserId == userId
-			select new
-			{
-				Role = bu.Role.ToLower(),
-				BookIds = bu.BookIds
-			}).FirstOrDefaultAsync();
-		if (businessUser == null)
-		{
-			return new PaginatedResponse<BookDto>
-			{
-				TotalRecords = 0,
-				Skip = currentPage,
-				Take = currentPageSize,
-				Data = new List<BookDto>()
-			};
-		}
+		int currentPage = Math.Max(1, skip ?? 1);
+		int currentPageSize = Math.Clamp(take ?? 25, 1, 200);
 		IQueryable<Book> query = _context.Books.Where((Book b) => b.BusinessId == businessId);
-		bool flag;
-		switch (businessUser.Role)
+		if (allowedBookIds != null)
 		{
-		case "admin":
-		case "dataoperator":
-		case "staff":
-		case "privateviewer":
-		case "portfolio_manager":
-			flag = true;
-			break;
-		default:
-			flag = false;
-			break;
-		}
-		if (flag)
-		{
-			if (businessUser.BookIds == null || !businessUser.BookIds.Any())
+			if (allowedBookIds.Count == 0)
 			{
 				return new PaginatedResponse<BookDto>
 				{
@@ -102,7 +72,7 @@ public class BookRepository : Repository<Book>, IBookRepository, IRepository<Boo
 					Data = new List<BookDto>()
 				};
 			}
-			query = query.Where((Book b) => businessUser.BookIds.Contains(b.Id));
+			query = query.Where((Book b) => allowedBookIds.Contains(b.Id));
 		}
 		if (!string.IsNullOrWhiteSpace(search))
 		{
@@ -116,10 +86,10 @@ public class BookRepository : Repository<Book>, IBookRepository, IRepository<Boo
 				BusinessId = b.BusinessId,
 				CreatedAt = b.CreatedAt,
 				UpdatedAt = b.UpdatedAt,
-				CashInIqd = (b.Transactions.AsQueryable().Where((Transaction t) => (int)t.Currency == 2 && t.Type == "cash in").Sum((Transaction t) => (decimal?)t.Amount) ?? 0m),
-				CashOutIqd = (b.Transactions.AsQueryable().Where((Transaction t) => (int)t.Currency == 2 && t.Type == "cash out").Sum((Transaction t) => (decimal?)t.Amount) ?? 0m),
-				CashInUsd = (b.Transactions.AsQueryable().Where((Transaction t) => (int)t.Currency == 1 && t.Type == "cash in").Sum((Transaction t) => (decimal?)t.Amount) ?? 0m),
-				CashOutUsd = (b.Transactions.AsQueryable().Where((Transaction t) => (int)t.Currency == 1 && t.Type == "cash out").Sum((Transaction t) => (decimal?)t.Amount) ?? 0m)
+				CashInIqd = (b.Transactions.AsQueryable().Where((Transaction t) => !t.IsArchived && t.Currency == CurrencyCode.IQD && t.Type == "cash in").Sum((Transaction t) => (decimal?)t.Amount) ?? 0m),
+				CashOutIqd = (b.Transactions.AsQueryable().Where((Transaction t) => !t.IsArchived && t.Currency == CurrencyCode.IQD && t.Type == "cash out").Sum((Transaction t) => (decimal?)t.Amount) ?? 0m),
+				CashInUsd = (b.Transactions.AsQueryable().Where((Transaction t) => !t.IsArchived && t.Currency == CurrencyCode.USD && t.Type == "cash in").Sum((Transaction t) => (decimal?)t.Amount) ?? 0m),
+				CashOutUsd = (b.Transactions.AsQueryable().Where((Transaction t) => !t.IsArchived && t.Currency == CurrencyCode.USD && t.Type == "cash out").Sum((Transaction t) => (decimal?)t.Amount) ?? 0m)
 			};
 		if (1 == 0)
 		{
@@ -229,23 +199,10 @@ public class BookRepository : Repository<Book>, IBookRepository, IRepository<Boo
 		public decimal CashOutUsd { get; init; }
 	}
 
-	public async Task<BookDetailsDto?> GetBookDetailsByIdAsync(Guid bookId, Guid userId)
+	public async Task<BookDetailsDto?> GetBookDetailsByIdAsync(Guid bookId)
 	{
-		Book book = await _context.Books.FirstOrDefaultAsync((Book b) => b.Id == bookId);
+		Book book = await _context.Books.AsNoTracking().FirstOrDefaultAsync((Book b) => b.Id == bookId);
 		if (book == null)
-		{
-			return null;
-		}
-		Guid businessId = book.BusinessId;
-		BusinessUser userBusiness = await _context.BusinessUsers.FirstOrDefaultAsync((BusinessUser bu) => bu.UserId == userId && bu.BusinessId == businessId);
-		if (userBusiness == null)
-		{
-			return null;
-		}
-		string role = userBusiness.Role?.ToLowerInvariant();
-		string[] privilegedRoles = Roles.Privileged;
-		string[] rolesNeedBookCheck = Roles.BookScoped;
-		if (!Enumerable.Contains(privilegedRoles, role) && Enumerable.Contains(rolesNeedBookCheck, role) && (userBusiness.BookIds == null || !userBusiness.BookIds.Contains(bookId)))
 		{
 			return null;
 		}
@@ -319,87 +276,22 @@ public class BookRepository : Repository<Book>, IBookRepository, IRepository<Boo
 		};
 	}
 
-	public async Task<bool> DeleteBookAsync(Guid bookId, Guid? deletedByUserId = null)
+	/// <summary>
+	/// أرشفة الخزنة دون رجعة. قيودها لا تُلمس: فلتر الأرشفة على الخزنة يخفيها كلها معها،
+	/// ولا أحد يملك صلاحية على خزنة مؤرشفة.
+	/// </summary>
+	public async Task<bool> ArchiveBookAsync(Guid bookId, Guid archivedByUserId, string? reason = null)
 	{
-		Book book = await _context.Books.AsSplitQuery().Include((Book b) => b.CustomFields).Include((Book b) => b.Settings).Include((Book b) => b.Transactions)
-			.ThenInclude((Transaction t) => t.Attachements)
-			.Include((Book b) => b.Transactions)
-			.ThenInclude((Transaction t) => t.CustomFieldValues)
-			.FirstOrDefaultAsync((Book b) => b.Id == bookId);
+		Book book = await _context.Books.FirstOrDefaultAsync((Book b) => b.Id == bookId);
 		if (book == null)
 		{
 			return false;
 		}
-		bool moveToTrash = deletedByUserId.HasValue;
-		TrashRelatedData related = new TrashRelatedData();
-		string uploadsFolder = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads");
-		List<Attachement> attachments = book.Transactions.SelectMany(delegate(Transaction t)
-		{
-			IEnumerable<Attachement> attachements = t.Attachements;
-			return attachements ?? Enumerable.Empty<Attachement>();
-		}).ToList();
-		List<CustomFieldValue> customFieldValues = book.Transactions.SelectMany(delegate(Transaction t)
-		{
-			IEnumerable<CustomFieldValue> customFieldValues2 = t.CustomFieldValues;
-			return customFieldValues2 ?? Enumerable.Empty<CustomFieldValue>();
-		}).ToList();
-		if (moveToTrash)
-		{
-			// نسخة كاملة من كل ما يحذفه حذف الخزنة كي ترجع كاملة عند الاستعادة.
-			TrashHelper.AddRows(related, "CustomFields", book.CustomFields);
-			TrashHelper.AddRows(related, "Settings", book.Settings);
-			TrashHelper.AddRows(related, "Transactions", book.Transactions);
-			TrashHelper.AddRows(related, "Attachements", attachments);
-			TrashHelper.AddRows(related, "CustomFieldValues", customFieldValues);
-		}
-		foreach (Attachement attachment in attachments)
-		{
-			if (string.IsNullOrEmpty(attachment.Files))
-			{
-				continue;
-			}
-			// الملفات تبقى على القرص حتى الحذف النهائي، وإلا تعذّرت الاستعادة.
-			if (moveToTrash)
-			{
-				continue;
-			}
-			string filePath = Path.Combine(uploadsFolder, attachment.Files);
-			if (File.Exists(filePath))
-			{
-				try
-				{
-					File.Delete(filePath);
-				}
-				catch (Exception ex)
-				{
-					Exception ex2 = ex;
-					Console.WriteLine("Failed to delete file " + attachment.Files + ": " + ex2.Message);
-				}
-			}
-		}
-		if (attachments.Any())
-		{
-			_context.Attachements.RemoveRange(attachments);
-		}
-		if (customFieldValues.Any())
-		{
-			_context.CustomFieldValues.RemoveRange(customFieldValues);
-		}
-		if (book.Transactions != null && book.Transactions.Any())
-		{
-			_context.Transactions.RemoveRange(book.Transactions);
-		}
-		if (book.CustomFields != null && book.CustomFields.Any())
-		{
-			_context.CustomFields.RemoveRange(book.CustomFields);
-		}
-		if (moveToTrash)
-		{
-			TrashItem trashItem = TrashHelper.Build(book, deletedByUserId);
-			trashItem.RelatedJson = TrashHelper.Serialize(related);
-			_context.TrashItems.Add(trashItem);
-		}
-		_context.Books.Remove(book);
+		book.IsArchived = true;
+		book.ArchivedAt = DateTime.UtcNow;
+		book.ArchivedByUserId = archivedByUserId;
+		book.ArchiveReason = ArchiveText.Reason(reason);
+		book.UpdatedAt = DateTime.UtcNow;
 		await _context.SaveChangesAsync();
 		return true;
 	}

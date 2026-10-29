@@ -9,25 +9,20 @@ namespace cashbook.Interfaces;
 
 public interface IUserRepository : IRepository<User>
 {
-	Task<UserDto> Register(RegisterationRequestDto registerationRequestDto);
+	/// <summary>الدخول بكلمة المرور. يعيد null إن كانت البيانات خاطئة أو الحساب معطّلاً.</summary>
+	Task<LoginResponseDto?> Login(LoginRequestDto loginRequestDto);
 
-	Task<LoginResponseDto>? Login(LoginRequestDto loginRequestDto);
-
-	Task<bool> IsPasswordCorrect(RegisterationRequestDto registerationRequestDto);
-
-	Task<bool> IsUniqueUser(string Email);
+	Task<bool> IsUniqueUser(string email);
 
 	Task<bool> IsUsernameAvailableAsync(string username);
 
-	Task<bool> UserExistsAsync(Guid Id);
+	Task<bool> UserExistsAsync(Guid id);
 
 	Task<bool> UpdateUserAsync(Guid id, UserUpdateDto userUpdateDto);
 
-	Task<LoginResponseDto> RefreshTokenAsync(string RefreshToken);
+	Task<LoginResponseDto?> RefreshTokenAsync(string refreshToken);
 
 	Task<PaginatedResponse<UserDto>> GetAllUsersAsync(Guid businessId, int? skip = 1, int? take = 25, string search = null);
-
-	Task<bool> RemoveUserAsync(Guid id);
 
 	Task<bool> LogoutAsync(ClaimsPrincipal userClaims);
 

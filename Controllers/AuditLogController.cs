@@ -17,6 +17,7 @@ using cashbook.Dto.audit;
 using cashbook.Helper;
 using cashbook.Interfaces;
 using cashbook.Models;
+using cashbook.Services;
 using cashbook.Models.Constants;
 
 namespace cashbook.Controllers;
@@ -40,14 +41,17 @@ public class AuditLogController : ControllerBase
 
 	private readonly ApplicationDbContext _context;
 
+	private readonly IPermissionService _permissions;
+
 	private readonly IAuditLogger _auditLogger;
 
 	private readonly AuditSettings _settings;
 
 	private readonly ILogger<AuditLogController> _logger;
 
-	public AuditLogController(IAuditLogRepository auditRepository, ApplicationDbContext context, IAuditLogger auditLogger, IOptions<AuditSettings> settings, ILogger<AuditLogController> logger)
+	public AuditLogController(IAuditLogRepository auditRepository, ApplicationDbContext context, IAuditLogger auditLogger, IOptions<AuditSettings> settings, ILogger<AuditLogController> logger, IPermissionService permissions)
 	{
+		_permissions = permissions;
 		_auditRepository = auditRepository;
 		_context = context;
 		_auditLogger = auditLogger;
@@ -294,9 +298,7 @@ public class AuditLogController : ControllerBase
 		{
 			return new AccessResult(Allowed: false, Unrestricted: false, null, null, "هوية المستخدم غير صالحة في التوكن.");
 		}
-		if (await (from u in _context.Users.AsNoTracking()
-			where u.Id == ((Guid?)userId).Value
-			select u.IsSuperAdmin).FirstOrDefaultAsync())
+		if (await _permissions.IsSuperAdminAsync(userId.Value))
 		{
 			return new AccessResult(Allowed: true, Unrestricted: true, requestedBusinessId, null, null);
 		}
@@ -304,16 +306,13 @@ public class AuditLogController : ControllerBase
 		{
 			return new AccessResult(Allowed: false, Unrestricted: false, null, null, "يجب تحديد businessId — سجل التدقيق مقصور على منشأتك.");
 		}
-		string role = await (from bu in _context.BusinessUsers.AsNoTracking()
-			where bu.UserId == ((Guid?)userId).Value && bu.BusinessId == ((Guid?)requestedBusinessId).Value
-			select bu.Role.ToLower()).FirstOrDefaultAsync();
-		if (role == null || !Enumerable.Contains(Roles.Management, role))
+		// الأدمن يطّلع على سجل الخزائن التي يدير مستخدميها فقط.
+		List<Guid> managedBooks = await _permissions.GetBookIdsAsync(userId.Value, requestedBusinessId.Value, Permissions.UsersManage);
+		if (managedBooks.Count == 0)
 		{
-			return new AccessResult(Allowed: false, Unrestricted: false, null, null, "الاطلاع على سجل التدقيق متاح لصاحب المنشأة أو شريكها فقط.");
+			return new AccessResult(Allowed: false, Unrestricted: false, null, null, "الاطلاع على سجل التدقيق متاح للسوبر أدمن وللأدمن على خزائنه فقط.");
 		}
-		return new AccessResult(BookIds: await (from b in _context.Books.AsNoTracking()
-			where b.BusinessId == ((Guid?)requestedBusinessId).Value
-			select b.Id).ToListAsync(), Allowed: true, Unrestricted: false, BusinessId: requestedBusinessId, Error: null);
+		return new AccessResult(BookIds: managedBooks, Allowed: true, Unrestricted: false, BusinessId: requestedBusinessId, Error: null);
 	}
 
 	private static AuditLogQuery ToScopeQuery(AccessResult access)

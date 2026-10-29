@@ -41,3 +41,6 @@ swagger.json
 # مرفقات التطوير المحلية — في الإنتاج يأتي مكانها volume فارغ
 wwwroot/uploads/*
 !wwwroot/uploads/.gitkeep
+
+# البرنامج الوسيط للبصمة يعمل على أجهزة المستخدمين لا في الخادم
+tools/
