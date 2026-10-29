@@ -4,30 +4,23 @@
 
 ## المتطلبات
 
-1. قاعدة تطوير فيها البيانات التجريبية (`Seed/SeedDemoData.sql`) ومُرحَّلة إلى آخر Migration.
-2. الحسابات التجريبية `demo1` إلى `demo8` بكلمة مرور واحدة، وسوبر أدمن باسم `root`.
-3. ملف بيئة للتطوير يحتوي:
-   ```
-   ConnectionStrings__DefaultConnection=Server=localhost\SQLEXPRESS;Database=cashbook_dev;Trusted_Connection=True;Encrypt=True;TrustServerCertificate=True;
-   AdminUser__Username=root
-   AdminUser__Password=<كلمة مرور root>
-   Fingerprint__Matcher=dev
-   RateLimiting__LoginPerMinute=1000
-   ```
-   السطر الأخير ضروري، لأن الاختبارات تسجّل الدخول عشرات المرات في الدقيقة.
+قاعدة التطوير `cash` على SQL Express جاهزة بالبيانات التجريبية، وملف `.env.local` (مستثنى من Git) فيه الاتصال والأسرار وكلمات مرور الحسابات التجريبية وحد الدخول المرفوع للاختبارات. لإعادة بنائها من الصفر:
+
+1. `DOTENV_PATH=.env.local dotnet ef database update 20261008002347_AddTrashRelatedJson`
+2. أضف المستخدم `aaaa` بكلمة مرور الحسابات التجريبية، ثم `sqlcmd -S localhost\SQLEXPRESS -d cash -E -i Seed\SeedDemoData.sql -f 65001`
+3. `DOTENV_PATH=.env.local dotnet ef database update` (يحوّل الأدوار القديمة إلى الصلاحيات الجديدة)
 4. Python 3.10 أو أحدث، دون أي حزم إضافية.
 
 ## التشغيل
 
 ```
-DOTENV_PATH=<ملف البيئة> ASPNETCORE_ENVIRONMENT=Development dotnet run --no-launch-profile
+dotnet run --launch-profile http
 ```
 
 في نافذة أخرى:
 
 ```
-export CASHBOOK_ROOT_PASSWORD=<كلمة مرور root>
-export CASHBOOK_DEMO_PASSWORD=<كلمة مرور الحسابات التجريبية>
+export $(grep -E "^CASHBOOK_(ROOT|DEMO)_PASSWORD=" .env.local | xargs)
 python tests/integration/test_permissions_archive.py
 python tests/integration/test_security.py
 python tests/integration/test_sessions_export.py
