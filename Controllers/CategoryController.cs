@@ -10,6 +10,7 @@ using cashbook.Services;
 
 namespace cashbook.Controllers;
 
+/// <summary>تصنيفات القيود على مستوى المنشأة. العرض لكل عضو، والإدارة لمن يملك category.manage.</summary>
 [Route("API/[Controller]")]
 public class CategoryController : BusinessReferenceController<Category, CategoryDto, CreateCategoryDto, UpdateCategoryDto>
 {

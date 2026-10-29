@@ -49,6 +49,17 @@ public abstract class BusinessReferenceController<TEntity, TDto, TCreate, TUpdat
 	/// <summary>ينسخ الحقول المرسلة فقط إلى الكيان. المنشأة لا تتغير.</summary>
 	protected abstract void ApplyUpdate(TUpdate dto, TEntity entity);
 
+	/// <summary>القائمة (صفحات)</summary>
+	/// <remarks>
+	/// **الصلاحية:** عضو في المنشأة (يحتاجها لاختيار القيمة عند إضافة قيد). المؤرشف لا يظهر.
+	/// </remarks>
+	/// <param name="businessId">معرّف المنشأة.</param>
+	/// <param name="skip">رقم الصفحة، يبدأ من 1.</param>
+	/// <param name="take">عدد السجلات في الصفحة (حد أقصى 200).</param>
+	/// <param name="search">بحث في الاسم.</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
 	[HttpGet]
 	public async Task<ActionResult<APIResponse>> GetPaginated([FromQuery] Guid businessId, [FromQuery] int? skip = 1, [FromQuery] int? take = 25, [FromQuery] string? search = null)
 	{
@@ -63,6 +74,15 @@ public abstract class BusinessReferenceController<TEntity, TDto, TCreate, TUpdat
 		return Success(await ListAsync(businessId, Page(skip), PageSize(take), search));
 	}
 
+	/// <summary>سجل واحد</summary>
+	/// <remarks>
+	/// **الصلاحية:** عضو في منشأة السجل.
+	/// </remarks>
+	/// <param name="id">معرّف السجل.</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
+	/// <response code="404">السجل غير موجود، أو مؤرشف.</response>
 	[HttpGet("{id:Guid}")]
 	public async Task<ActionResult<APIResponse>> GetById(Guid id)
 	{
@@ -82,6 +102,17 @@ public abstract class BusinessReferenceController<TEntity, TDto, TCreate, TUpdat
 		return Success(ToDto(entity));
 	}
 
+	/// <summary>إضافة</summary>
+	/// <remarks>
+	/// **الصلاحية:** صلاحية الإدارة الخاصة بهذا النوع (category.manage أو contact.manage أو payment_method.manage) على أي خزنة في المنشأة.
+	///
+	/// الاسم إلزامي.
+	/// </remarks>
+	/// <param name="dto">الاسم والمنشأة (ورقم الهاتف لجهة الاتصال).</param>
+	/// <response code="201">أُضيف. المعرّف في result.id.</response>
+	/// <response code="400">بيانات الطلب ناقصة أو غير صالحة. السبب في errorMessages.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
 	[HttpPost]
 	public async Task<ActionResult<APIResponse>> Create([FromBody] TCreate dto)
 	{
@@ -106,6 +137,18 @@ public abstract class BusinessReferenceController<TEntity, TDto, TCreate, TUpdat
 		return Success(new { entity.Id }, HttpStatusCode.Created);
 	}
 
+	/// <summary>تعديل</summary>
+	/// <remarks>
+	/// **الصلاحية:** صلاحية الإدارة الخاصة بهذا النوع.
+	///
+	/// أرسل الحقل الذي تريد تغييره فقط: الحقل غير المرسل يبقى كما هو.
+	/// </remarks>
+	/// <param name="id">معرّف السجل.</param>
+	/// <param name="dto">الحقول المراد تغييرها.</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
+	/// <response code="404">السجل غير موجود، أو مؤرشف.</response>
 	[HttpPut("{id:Guid}")]
 	public async Task<ActionResult<APIResponse>> Update([FromRoute] Guid id, [FromBody] TUpdate dto)
 	{
@@ -132,10 +175,31 @@ public abstract class BusinessReferenceController<TEntity, TDto, TCreate, TUpdat
 		return Success(ToDto(entity));
 	}
 
-	/// <summary>لا حذف في النظام: هذا المسار يؤرشف السجل دون رجعة. السبب اختياري.</summary>
+	/// <summary>أرشفة (لا حذف)</summary>
+	/// <remarks>
+	/// **الصلاحية:** صلاحية الإدارة الخاصة بهذا النوع.
+	///
+	/// يختفي من القوائم، والقيود القديمة تبقى محتفظة باسمه. مثل POST /{id}/archive.
+	/// </remarks>
+	/// <param name="id">معرّف السجل.</param>
+	/// <param name="reason">سبب الأرشفة (اختياري).</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
+	/// <response code="404">السجل غير موجود، أو مؤرشف.</response>
 	[HttpDelete("{id:Guid}")]
 	public Task<ActionResult<APIResponse>> Delete(Guid id, [FromQuery] string? reason = null) => ArchiveCore(id, reason);
 
+	/// <summary>أرشفة</summary>
+	/// <remarks>
+	/// **الصلاحية:** صلاحية الإدارة الخاصة بهذا النوع. دون رجعة.
+	/// </remarks>
+	/// <param name="id">معرّف السجل.</param>
+	/// <param name="reason">سبب الأرشفة (اختياري).</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
+	/// <response code="404">السجل غير موجود، أو مؤرشف.</response>
 	[HttpPost("{id:Guid}/archive")]
 	public Task<ActionResult<APIResponse>> Archive(Guid id, [FromQuery] string? reason = null) => ArchiveCore(id, reason);
 

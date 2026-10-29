@@ -4,13 +4,15 @@
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <NoWarn>$(NoWarn);CS8618;CS8603;CS8604;CS8601;CS8602;CS8600</NoWarn>
+    <NoWarn>$(NoWarn);CS1591;CS1573;CS8618;CS8603;CS8604;CS8601;CS8602;CS8600</NoWarn>
     <!--
       الأسرار تُقرأ من مخزن المستخدم المحلي (تطوير) أو من ملف .env (خادم)،
       ولا تُكتب داخل appsettings.json أبداً.
       إدارة السر:  dotnet user-secrets set "ApiSettings:Secret" "<قيمة>"
     -->
     <UserSecretsId>cashbook-api-secrets</UserSecretsId>
+    <!-- تعليقات XML فوق المسارات تظهر شرحاً في Swagger. CS1591: لا يُلزَم كل صنف بتعليق. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
   <ItemGroup>

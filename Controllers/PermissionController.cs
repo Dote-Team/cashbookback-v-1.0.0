@@ -11,10 +11,7 @@ using cashbook.Services;
 
 namespace cashbook.Controllers;
 
-/// <summary>
-/// قائمة الصلاحيات وصلاحيات المستخدم الحالي. الواجهة تستخدمها لإظهار الأزرار وإخفائها فقط؛
-/// الفحص الحقيقي يتم في الخادم مع كل طلب.
-/// </summary>
+/// <summary>قائمة الصلاحيات المعروفة، وصلاحيات المستخدم الحالي لإظهار الأزرار أو إخفائها في الواجهة.</summary>
 [Route("API/[Controller]")]
 [Authorize]
 public class PermissionController : ApiControllerBase
@@ -26,10 +23,16 @@ public class PermissionController : ApiControllerBase
 		_permissions = permissions;
 	}
 
-	/// <summary>
-	/// كل الصلاحيات المعروفة. مع bookId تُعاد فقط التي يستطيع المستدعي منحها على تلك الخزنة
-	/// (صلاحياته هو، دون «إدارة المستخدمين» إن لم يكن سوبر أدمن).
-	/// </summary>
+	/// <summary>قائمة الصلاحيات</summary>
+	/// <remarks>
+	/// كل الصلاحيات مع أسمائها العربية ومجموعاتها، لبناء شاشة منح الصلاحيات.
+	///
+	/// مع bookId تُعاد فقط الصلاحيات التي تستطيع **أنت** منحها على تلك الخزنة.
+	/// users.manage (إدارة المستخدمين) يمنحها السوبر أدمن فقط.
+	/// </remarks>
+	/// <param name="bookId">اختياري: الخزنة التي تريد المنح عليها.</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
 	[HttpGet("catalog")]
 	public async Task<ActionResult<APIResponse>> Catalog([FromQuery] Guid? bookId = null)
 	{
@@ -54,7 +57,17 @@ public class PermissionController : ApiControllerBase
 		}).ToList());
 	}
 
-	/// <summary>صلاحيات المستخدم الحالي على خزائن منشأة معينة.</summary>
+	/// <summary>صلاحياتي</summary>
+	/// <remarks>
+	/// صلاحيات المستخدم الحالي على كل خزنة، لإظهار الأزرار في الواجهة أو إخفائها.
+	///
+	/// - books: معرّف الخزنة ← رموز الصلاحيات.
+	/// - business: كل الصلاحيات على خزائن المنشأة المطلوبة مجتمعة.
+	/// - canManageUsers: هل يظهر له قسم المستخدمين.
+	/// </remarks>
+	/// <param name="businessId">اختياري: لحساب business لهذه المنشأة.</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
 	[HttpGet("me")]
 	public async Task<ActionResult<APIResponse>> Me([FromQuery] Guid? businessId = null)
 	{

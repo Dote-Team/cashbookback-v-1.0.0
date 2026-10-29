@@ -104,10 +104,17 @@ internal class Program
         {
             c.SwaggerDoc("v1", new OpenApiInfo
             {
-                Title = "CashBook",
-                Version = "v1"
+                Title = "CashBook API",
+                Version = "v1",
+                Description = SwaggerGuide.Description
             });
             c.EnableAnnotations();
+            // الشرح المكتوب فوق كل مسار وكل متحكم (تعليقات XML) يظهر في الصفحة.
+            string xmlDocs = Path.Combine(AppContext.BaseDirectory, typeof(Program).Assembly.GetName().Name + ".xml");
+            if (File.Exists(xmlDocs))
+            {
+                c.IncludeXmlComments(xmlDocs, includeControllerXmlComments: true);
+            }
             c.UseInlineDefinitionsForEnums();
             c.MapType<SortField>(() => new OpenApiSchema
             {
@@ -339,7 +346,12 @@ internal class Program
                 _ => "application/octet-stream"
             };
             return Results.File(path, contentType);
-        }).WithDisplayName("ShowImage");
+        }).WithDisplayName("ShowImage")
+            .WithTags("Files")
+            .WithSummary("عرض مرفق أو صورة شخصية")
+            .WithDescription("الرابط يأتي جاهزاً في بيانات القيد (حقل files) ومعه توقيع مؤقت صالح 12 ساعة، فيعمل داخل وسم img دون رمز دخول.\n\n"
+                + "بدون توقيع يُقبل الطلب فقط برمز دخول لمستخدم يملك transaction.view على خزنة المرفق.\n\n"
+                + "الرموز: 200 الملف، 401 بلا توقيع ولا دخول، 403 لا صلاحية، 404 غير موجود.");
         // فحص الصحة لـ Docker والمراقبة: 200 إن كانت قاعدة البيانات متاحة، و503 إن لم تكن.
         // الصفحة الرئيسية: في التطوير تفتح Swagger، وفي الإنتاج تعرض اسم الخدمة ورابط فحص الصحة.
         app.MapGet("/", () => app.Environment.IsDevelopment()
@@ -349,11 +361,23 @@ internal class Program
         {
             bool database = await db.Database.CanConnectAsync(cancellationToken);
             return Results.Json(new { status = database ? "healthy" : "unhealthy", database }, statusCode: database ? StatusCodes.Status200OK : StatusCodes.Status503ServiceUnavailable);
-        }).WithDisplayName("Health");
+        }).WithDisplayName("Health")
+            .WithTags("Health")
+            .WithSummary("فحص صحة الخادم")
+            .WithDescription("لا يحتاج دخولاً. 200 إن كان الخادم يعمل وقاعدة البيانات متصلة، و503 إن انقطعت. يستخدمه Docker وأدوات المراقبة.");
         if (app.Environment.IsDevelopment())
         {
             app.UseSwagger();
-            app.UseSwaggerUI();
+            app.UseSwaggerUI(delegate (Swashbuckle.AspNetCore.SwaggerUI.SwaggerUIOptions options)
+            {
+                options.DocumentTitle = "CashBook API";
+                // المجموعات مطوية في البداية: الصفحة طويلة، والدليل العام أعلاها يُقرأ أولاً.
+                options.DocExpansion(Swashbuckle.AspNetCore.SwaggerUI.DocExpansion.None);
+                options.EnableFilter();
+                options.DisplayRequestDuration();
+                // رمز الدخول يبقى بعد تحديث الصفحة.
+                options.EnablePersistAuthorization();
+            });
         }
         app.UseAuthentication();
         app.UseMiddleware<AuditLogMiddleware>(Array.Empty<object>());

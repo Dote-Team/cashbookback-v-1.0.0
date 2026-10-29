@@ -5,6 +5,7 @@ namespace cashbook.Dto.category;
 
 public class UpdateCategoryDto
 {
+	/// <summary>الاسم الجديد.</summary>
 	public string? Name { get; set; }
 
 	[JsonIgnore]

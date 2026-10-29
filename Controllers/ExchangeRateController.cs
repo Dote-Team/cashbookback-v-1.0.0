@@ -17,10 +17,7 @@ using cashbook.Services;
 
 namespace cashbook.Controllers;
 
-/// <summary>
-/// أسعار الصرف اليومية لكل خزنة. الأخطاء غير المتوقعة يلتقطها المعالج العام فلا يصل نص
-/// الاستثناء إلى العميل.
-/// </summary>
+/// <summary>سعر صرف الدولار اليومي لكل خزنة. يُستخدم عند إضافة قيد بالدولار.</summary>
 [Route("API/[Controller]")]
 [Authorize]
 public class ExchangeRateController : ApiControllerBase
@@ -38,6 +35,14 @@ public class ExchangeRateController : ApiControllerBase
 		_context = context;
 	}
 
+	/// <summary>خزائني التي أحدد سعر صرفها، وحالة سعر اليوم</summary>
+	/// <remarks>
+	/// **الصلاحية:** عضو في المنشأة. تُعاد الخزائن التي تملك exchange_rate.manage عليها، مع isSet: هل حُدد سعر اليوم.
+	/// </remarks>
+	/// <param name="businessId">معرّف المنشأة.</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
 	[HttpGet("managed")]
 	public async Task<ActionResult<APIResponse>> GetManaged([FromQuery] Guid businessId)
 	{
@@ -68,6 +73,17 @@ public class ExchangeRateController : ApiControllerBase
 		}).ToList());
 	}
 
+	/// <summary>سعر الصرف الحالي لخزنة</summary>
+	/// <remarks>
+	/// **الصلاحية:** book.view على الخزنة.
+	///
+	/// سعر اليوم إن وُجد، وإلا آخر سعر مسجّل (isToday = false). hasValue = false يعني لا سعر إطلاقاً.
+	/// </remarks>
+	/// <param name="bookId">معرّف الخزنة.</param>
+	/// <param name="currency">العملة (USD افتراضياً).</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
 	[HttpGet("current")]
 	public async Task<ActionResult<APIResponse>> GetCurrent([FromQuery] Guid bookId, [FromQuery] CurrencyCode currency = CurrencyCode.USD)
 	{
@@ -93,6 +109,17 @@ public class ExchangeRateController : ApiControllerBase
 		});
 	}
 
+	/// <summary>تحديد سعر الصرف ليوم</summary>
+	/// <remarks>
+	/// **الصلاحية:** exchange_rate.manage على الخزنة.
+	///
+	/// إن وُجد سعر لليوم نفسه يُستبدل. rateDate اختياري (اليوم افتراضياً). السعر: دنانير لكل دولار، مثل 1480.
+	/// </remarks>
+	/// <param name="dto">الخزنة والعملة والسعر والتاريخ.</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
+	/// <response code="400">بيانات الطلب ناقصة أو غير صالحة. السبب في errorMessages.</response>
 	[HttpPost]
 	public async Task<ActionResult<APIResponse>> Upsert([FromBody] UpsertExchangeRateDto dto)
 	{
@@ -131,6 +158,17 @@ public class ExchangeRateController : ApiControllerBase
 		});
 	}
 
+	/// <summary>سجل أسعار الصرف</summary>
+	/// <remarks>
+	/// **الصلاحية:** book.view على الخزنة. مع اسم من حدد كل سعر.
+	/// </remarks>
+	/// <param name="bookId">معرّف الخزنة.</param>
+	/// <param name="currency">العملة (USD افتراضياً).</param>
+	/// <param name="from">من تاريخ (اختياري).</param>
+	/// <param name="to">إلى تاريخ (اختياري).</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
 	[HttpGet("history")]
 	public async Task<ActionResult<APIResponse>> GetHistory([FromQuery] Guid bookId, [FromQuery] CurrencyCode currency = CurrencyCode.USD, [FromQuery] DateTime? from = null, [FromQuery] DateTime? to = null)
 	{

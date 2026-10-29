@@ -44,10 +44,7 @@ public class ArchivedItemDto
 	public string? ArchiveReason { get; set; }
 }
 
-/// <summary>
-/// الأرشيف: عرض فقط، بلا استرجاع. يرى كل مستخدم أرشيف الخزائن التي يملك عليها
-/// صلاحية «عرض الأرشيف»، حتى بعد أرشفة الخزنة نفسها.
-/// </summary>
+/// <summary>عرض المؤرشفات (قيود، خزائن، تصنيفات...). الأرشفة دون رجعة: لا يوجد استرجاع.</summary>
 [Route("API/[Controller]")]
 [Authorize]
 public class ArchiveController : ApiControllerBase
@@ -64,6 +61,22 @@ public class ArchiveController : ApiControllerBase
 		_permissions = permissions;
 	}
 
+	/// <summary>المؤرشفات</summary>
+	/// <remarks>
+	/// **الصلاحية:** archive.view على الخزائن. أرشيف المنشآت (type=business) للسوبر أدمن فقط.
+	///
+	/// كل عنصر معه تاريخ الأرشفة ومن أرشفه والسبب. **لا يوجد استرجاع.**
+	/// </remarks>
+	/// <param name="businessId">معرّف المنشأة.</param>
+	/// <param name="type">transaction أو book أو category أو contact أو payment_method أو custom_field أو business.</param>
+	/// <param name="bookId">اختياري: خزنة واحدة فقط.</param>
+	/// <param name="skip">رقم الصفحة، يبدأ من 1.</param>
+	/// <param name="take">عدد السجلات في الصفحة.</param>
+	/// <param name="search">بحث في الاسم أو الوصف.</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
+	/// <response code="400">نوع غير معروف.</response>
 	[HttpGet]
 	public async Task<ActionResult<APIResponse>> GetArchive([FromQuery] Guid businessId, [FromQuery] string type = "transaction", [FromQuery] Guid? bookId = null, [FromQuery] int? skip = 1, [FromQuery] int? take = 25, [FromQuery] string? search = null)
 	{

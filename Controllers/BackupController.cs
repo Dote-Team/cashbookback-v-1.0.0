@@ -19,6 +19,7 @@ using cashbook.Models;
 
 namespace cashbook.Controllers;
 
+/// <summary>النسخ الاحتياطي لخزنة كاملة في ملف .cbk مشفّر بكلمة مرور، واستيراده إلى خزنة جديدة أو موجودة.</summary>
 [Route("API/[Controller]")]
 [ApiController]
 [Authorize]
@@ -73,8 +74,20 @@ public class BackupController : ControllerBase
 		return $"backup-{value}-{DateTime.Now:yyyyMMdd-HHmmss}.cbk";
 	}
 
+	/// <summary>تصدير نسخة احتياطية لخزنة</summary>
+	/// <remarks>
+	/// **الصلاحية:** transaction.export على الخزنة.
+	///
+	/// يعيد ملف .cbk (وليس JSON) فيه كل القيود وحقولها ومرفقاتها، مشفّراً بكلمة المرور المرسلة (6 أحرف على الأقل).
+	/// **احفظ كلمة المرور:** لا يمكن فتح الملف بدونها.
+	/// </remarks>
+	/// <param name="request">الخزنة وكلمة مرور التشفير.</param>
+	/// <response code="200">ملف النسخة (application/octet-stream).</response>
+	/// <response code="400">بيانات الطلب ناقصة أو غير صالحة. السبب في errorMessages.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
+	/// <response code="404">الخزنة غير موجودة.</response>
 	[HttpPost("export")]
-	[SwaggerOperation(null, null, Summary = "owner , partner")]
 	[ProducesResponseType(200)]
 	[ProducesResponseType(400)]
 	[ProducesResponseType(401)]
@@ -115,6 +128,14 @@ public class BackupController : ControllerBase
 		}
 	}
 
+	/// <summary>معاينة نسخة احتياطية قبل استيرادها</summary>
+	/// <remarks>
+	/// multipart/form-data: الملف وكلمة مروره. يعيد اسم الخزنة الأصلية وعدد القيود والمرفقات، دون إدخال أي شيء. حد الملف 200MB.
+	/// </remarks>
+	/// <param name="request">الملف وكلمة المرور.</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="400">كلمة المرور خاطئة أو الملف تالف.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
 	[HttpPost("inspect")]
 	[RequestSizeLimit(Program.BackupBodyLimit)]
 	[RequestFormLimits(MultipartBodyLengthLimit = Program.BackupBodyLimit)]
@@ -151,10 +172,23 @@ public class BackupController : ControllerBase
 		}
 	}
 
+	/// <summary>استيراد نسخة احتياطية</summary>
+	/// <remarks>
+	/// **الصلاحية:**
+	/// - إلى خزنة موجودة (targetBookId): backup.import عليها.
+	/// - إلى خزنة جديدة (newBookName): السوبر أدمن فقط.
+	///
+	/// multipart/form-data. التصنيفات وجهات الاتصال وطرق الدفع تُربط بالموجودة بالاسم أو تُنشأ. كل قيد مستورد يُسجَّل بعملية IMPORT. حد الملف 200MB.
+	/// </remarks>
+	/// <param name="request">الملف وكلمة المرور والمنشأة، والخزنة الهدف أو اسم خزنة جديدة.</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
+	/// <response code="400">كلمة المرور خاطئة أو الملف تالف أو البيانات ناقصة.</response>
+	/// <response code="404">الخزنة الهدف غير موجودة.</response>
 	[HttpPost("import")]
 	[RequestSizeLimit(Program.BackupBodyLimit)]
 	[RequestFormLimits(MultipartBodyLengthLimit = Program.BackupBodyLimit)]
-	[SwaggerOperation(null, null, Summary = "owner , partner")]
 	[ProducesResponseType(200)]
 	[ProducesResponseType(400)]
 	[ProducesResponseType(401)]

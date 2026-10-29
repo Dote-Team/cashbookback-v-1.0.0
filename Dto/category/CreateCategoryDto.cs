@@ -4,7 +4,9 @@ namespace cashbook.Dto.category;
 
 public class CreateCategoryDto
 {
+	/// <summary>اسم التصنيف.</summary>
 	public string Name { get; set; }
 
+	/// <summary>المنشأة.</summary>
 	public Guid BusinessId { get; set; }
 }

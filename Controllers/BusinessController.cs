@@ -13,7 +13,7 @@ using cashbook.Services;
 
 namespace cashbook.Controllers;
 
-/// <summary>المنشآت: يراها كل من له خزنة فيها، وينشئها ويعدّلها ويؤرشفها السوبر أدمن وحده.</summary>
+/// <summary>المنشآت (الحافظات الرئيسية). الإنشاء والتعديل والأرشفة للسوبر أدمن فقط، والعرض لكل عضو.</summary>
 [Route("API/[Controller]")]
 [Authorize]
 public class BusinessController : ApiControllerBase
@@ -28,6 +28,15 @@ public class BusinessController : ApiControllerBase
 		_permissions = permissions;
 	}
 
+	/// <summary>المنشآت التي أنا عضو فيها</summary>
+	/// <remarks>
+	/// السوبر أدمن يرى كل المنشآت. غيره يرى المنشآت التي له صلاحية على خزنة فيها، ومع كل منشأة خزائنه فقط.
+	/// </remarks>
+	/// <param name="skip">رقم الصفحة، يبدأ من 1.</param>
+	/// <param name="take">عدد السجلات في الصفحة.</param>
+	/// <param name="search">بحث في اسم المنشأة.</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
 	[HttpGet]
 	public async Task<ActionResult<APIResponse>> GetPaginatedBusinesses([FromQuery] int? skip = 1, [FromQuery] int? take = 25, [FromQuery] string? search = null)
 	{
@@ -45,6 +54,15 @@ public class BusinessController : ApiControllerBase
 		return Success(await _businessRepository.GetPaginatedBusinessesAsync(businessIds, books, UserLevels.Name(caller.Level), skip, take, search));
 	}
 
+	/// <summary>بيانات منشأة</summary>
+	/// <remarks>
+	/// **الصلاحية:** عضو في المنشأة. الخزائن المعادة هي التي تملك book.view عليها.
+	/// </remarks>
+	/// <param name="id">معرّف المنشأة.</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
+	/// <response code="404">السجل غير موجود، أو مؤرشف.</response>
 	[HttpGet("{id:Guid}", Name = "GetBusiness")]
 	public async Task<ActionResult<APIResponse>> GetBusiness(Guid id)
 	{
@@ -63,6 +81,17 @@ public class BusinessController : ApiControllerBase
 		return business == null ? Fail(HttpStatusCode.NotFound, "المنشأة غير موجودة.") : Success(business);
 	}
 
+	/// <summary>إنشاء منشأة</summary>
+	/// <remarks>
+	/// **الصلاحية:** السوبر أدمن فقط.
+	///
+	/// بعدها أنشئ خزائنها (POST /API/Book) ثم أدمن لها (POST /API/UserManagement).
+	/// </remarks>
+	/// <param name="createBusinessDto">اسم المنشأة.</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
+	/// <response code="400">بيانات الطلب ناقصة أو غير صالحة. السبب في errorMessages.</response>
 	[HttpPost]
 	public async Task<ActionResult<APIResponse>> CreateBusiness([FromBody] CreateBusinessDto createBusinessDto)
 	{
@@ -82,10 +111,31 @@ public class BusinessController : ApiControllerBase
 		return Success(new { Id = id }, HttpStatusCode.Created);
 	}
 
-	/// <summary>لا حذف في النظام: هذا المسار يؤرشف المنشأة وخزائنها دون رجعة.</summary>
+	/// <summary>أرشفة منشأة (لا حذف)</summary>
+	/// <remarks>
+	/// **الصلاحية:** السوبر أدمن فقط.
+	///
+	/// المنشأة وكل خزائنها تختفي من القوائم دون رجعة، وتبقى في الأرشيف. مثل POST /{id}/archive.
+	/// </remarks>
+	/// <param name="id">معرّف المنشأة.</param>
+	/// <param name="reason">سبب الأرشفة (اختياري، يظهر في الأرشيف).</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
+	/// <response code="404">السجل غير موجود، أو مؤرشف.</response>
 	[HttpDelete("{id:Guid}", Name = "DeleteBusiness")]
 	public Task<ActionResult<APIResponse>> DeleteBusiness(Guid id, [FromQuery] string? reason = null) => ArchiveCore(id, reason);
 
+	/// <summary>أرشفة منشأة</summary>
+	/// <remarks>
+	/// **الصلاحية:** السوبر أدمن فقط. دون رجعة.
+	/// </remarks>
+	/// <param name="id">معرّف المنشأة.</param>
+	/// <param name="reason">سبب الأرشفة (اختياري).</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
+	/// <response code="404">السجل غير موجود، أو مؤرشف.</response>
 	[HttpPost("{id:Guid}/archive")]
 	public Task<ActionResult<APIResponse>> ArchiveBusiness(Guid id, [FromQuery] string? reason = null) => ArchiveCore(id, reason);
 
@@ -106,6 +156,17 @@ public class BusinessController : ApiControllerBase
 		return Success(new { archived = true });
 	}
 
+	/// <summary>تعديل اسم منشأة</summary>
+	/// <remarks>
+	/// **الصلاحية:** السوبر أدمن فقط.
+	/// </remarks>
+	/// <param name="id">معرّف المنشأة.</param>
+	/// <param name="updateBusinessDto">الاسم الجديد.</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
+	/// <response code="400">بيانات الطلب ناقصة أو غير صالحة. السبب في errorMessages.</response>
+	/// <response code="404">السجل غير موجود، أو مؤرشف.</response>
 	[HttpPut("{id:Guid}", Name = "UpdateBusiness")]
 	public async Task<ActionResult<APIResponse>> UpdateBusiness([FromRoute] Guid id, [FromBody] UpdateBusinessDto updateBusinessDto)
 	{

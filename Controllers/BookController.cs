@@ -17,9 +17,7 @@ using cashbook.Services;
 
 namespace cashbook.Controllers;
 
-/// <summary>
-/// الخزائن. إنشاء الخزنة ونقلها بين المنشآت للسوبر أدمن وحده، وما سوى ذلك بصلاحيات الخزنة نفسها.
-/// </summary>
+/// <summary>الخزائن داخل المنشأة، مع أرصدتها بالدينار والدولار. كل خزنة لها صلاحيات مستقلة لكل مستخدم.</summary>
 [Route("API/[Controller]")]
 [Authorize]
 public class BookController : ApiControllerBase
@@ -37,6 +35,21 @@ public class BookController : ApiControllerBase
 		_context = context;
 	}
 
+	/// <summary>خزائن منشأة مع أرصدتها</summary>
+	/// <remarks>
+	/// **الصلاحية:** عضو في المنشأة. تُعاد الخزائن التي تملك book.view عليها فقط.
+	///
+	/// الرصيد = الإيداعات − السحوبات، بالدينار والدولار كلٌّ على حدة. القيود المؤرشفة لا تدخل في الرصيد.
+	/// </remarks>
+	/// <param name="businessId">معرّف المنشأة.</param>
+	/// <param name="skip">رقم الصفحة، يبدأ من 1.</param>
+	/// <param name="take">عدد السجلات في الصفحة.</param>
+	/// <param name="search">بحث في اسم الخزنة.</param>
+	/// <param name="sortBy">الترتيب: Name أو CreatedAt أو Balance (الدينار ثم الدولار).</param>
+	/// <param name="sortDirection">asc أو desc.</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
 	[HttpGet]
 	public async Task<ActionResult<APIResponse>> GetPaginatedBooks([FromQuery] Guid businessId, [FromQuery] int? skip = 1, [FromQuery] int? take = 25, [FromQuery] string? search = null, [FromQuery] SortField? sortBy = null, [FromQuery] SortDirection? sortDirection = SortDirection.desc)
 	{
@@ -54,6 +67,15 @@ public class BookController : ApiControllerBase
 		return Success(await _bookRepository.GetBooksAsync(businessId, allowed, skip, take, search, sortBy, sortDirection));
 	}
 
+	/// <summary>تفاصيل خزنة</summary>
+	/// <remarks>
+	/// **الصلاحية:** book.view على الخزنة. يشمل الأرصدة وإعدادات الخزنة.
+	/// </remarks>
+	/// <param name="id">معرّف الخزنة.</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
+	/// <response code="404">السجل غير موجود، أو مؤرشف.</response>
 	[HttpGet("{id:Guid}", Name = "GetBook")]
 	public async Task<ActionResult<APIResponse>> GetBook(Guid id)
 	{
@@ -71,6 +93,18 @@ public class BookController : ApiControllerBase
 		return book == null ? Fail(HttpStatusCode.NotFound, "الخزنة غير موجودة.") : Success(book);
 	}
 
+	/// <summary>إنشاء خزنة</summary>
+	/// <remarks>
+	/// **الصلاحية:** السوبر أدمن فقط.
+	///
+	/// بعد الإنشاء امنح الأدمن صلاحياته عليها من /API/UserManagement/{id}/permissions.
+	/// </remarks>
+	/// <param name="createBookDto">اسم الخزنة والمنشأة التي تتبعها.</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
+	/// <response code="400">بيانات الطلب ناقصة أو غير صالحة. السبب في errorMessages.</response>
+	/// <response code="404">المنشأة غير موجودة.</response>
 	[HttpPost]
 	public async Task<ActionResult<APIResponse>> CreateBook([FromBody] CreateBookDto createBookDto)
 	{
@@ -97,10 +131,31 @@ public class BookController : ApiControllerBase
 		return Success(null, HttpStatusCode.Created);
 	}
 
-	/// <summary>لا حذف في النظام: هذا المسار يؤرشف الخزنة وقيودها دون رجعة. السبب اختياري.</summary>
+	/// <summary>أرشفة خزنة (لا حذف)</summary>
+	/// <remarks>
+	/// **الصلاحية:** book.archive على الخزنة.
+	///
+	/// تختفي الخزنة وقيودها من القوائم والأرصدة دون رجعة، وتبقى في الأرشيف. مثل POST /{id}/archive.
+	/// </remarks>
+	/// <param name="id">معرّف الخزنة.</param>
+	/// <param name="reason">سبب الأرشفة (اختياري).</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
+	/// <response code="404">السجل غير موجود، أو مؤرشف.</response>
 	[HttpDelete("{id:Guid}", Name = "DeleteBook")]
 	public Task<ActionResult<APIResponse>> DeleteBook(Guid id, [FromQuery] string? reason = null) => ArchiveCore(id, reason);
 
+	/// <summary>أرشفة خزنة</summary>
+	/// <remarks>
+	/// **الصلاحية:** book.archive على الخزنة. دون رجعة.
+	/// </remarks>
+	/// <param name="id">معرّف الخزنة.</param>
+	/// <param name="reason">سبب الأرشفة (اختياري).</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
+	/// <response code="404">السجل غير موجود، أو مؤرشف.</response>
 	[HttpPost("{id:Guid}/archive")]
 	public Task<ActionResult<APIResponse>> ArchiveBook(Guid id, [FromQuery] string? reason = null) => ArchiveCore(id, reason);
 
@@ -119,6 +174,19 @@ public class BookController : ApiControllerBase
 		return Success(new { archived = true });
 	}
 
+	/// <summary>تعديل خزنة</summary>
+	/// <remarks>
+	/// **الصلاحية:** book.edit على الخزنة. نقلها إلى منشأة أخرى (businessId) للسوبر أدمن فقط.
+	///
+	/// أرسل الحقل الذي تريد تغييره فقط.
+	/// </remarks>
+	/// <param name="id">معرّف الخزنة.</param>
+	/// <param name="updateBookDto">الاسم الجديد، والمنشأة اختيارياً.</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
+	/// <response code="400">بيانات الطلب ناقصة أو غير صالحة. السبب في errorMessages.</response>
+	/// <response code="404">السجل غير موجود، أو مؤرشف.</response>
 	[HttpPut("{id:Guid}", Name = "UpdateBook")]
 	public async Task<ActionResult<APIResponse>> UpdateBook([FromRoute] Guid id, [FromBody] UpdateBookDto updateBookDto)
 	{
@@ -165,6 +233,19 @@ public class BookController : ApiControllerBase
 		});
 	}
 
+	/// <summary>إعدادات الخزنة</summary>
+	/// <remarks>
+	/// **الصلاحية:** book.edit على الخزنة.
+	///
+	/// تحدد الحقول الإلزامية عند إضافة قيد: categoryStatus (التصنيف)، paymentMethodStatus (طريقة الدفع)، contactStatus (جهة الاتصال).
+	/// أرسل الحقل الذي تريد تغييره فقط.
+	/// </remarks>
+	/// <param name="bookId">معرّف الخزنة.</param>
+	/// <param name="dto">الإعدادات المراد تغييرها.</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
+	/// <response code="404">السجل غير موجود، أو مؤرشف.</response>
 	[HttpPatch("{bookId:Guid}/setting")]
 	public async Task<ActionResult<APIResponse>> PatchBookSetting(Guid bookId, [FromBody] UpdateSettingDto dto)
 	{

@@ -5,43 +5,55 @@ namespace cashbook.Dto.userManagement;
 
 public class BookGrantDto
 {
+	/// <summary>معرّف الخزنة.</summary>
 	public Guid BookId { get; set; }
 
+	/// <summary>رموز الصلاحيات على هذه الخزنة، مثل book.view و transaction.create (القائمة الكاملة من /API/Permission/catalog).</summary>
 	public List<string> Permissions { get; set; } = new List<string>();
 }
 
 public class CreateManagedUserDto
 {
+	/// <summary>اسم الدخول (فريد).</summary>
 	public string Username { get; set; }
 
+	/// <summary>الاسم الظاهر.</summary>
 	public string Name { get; set; }
 
+	/// <summary>البريد (اختياري).</summary>
 	public string? Email { get; set; }
 
+	/// <summary>كلمة المرور: 8 أحرف على الأقل، فيها حرف ورقم.</summary>
 	public string Password { get; set; }
 
+	/// <summary>الخزائن وصلاحيات كل منها.</summary>
 	public List<BookGrantDto> Grants { get; set; } = new List<BookGrantDto>();
 }
 
 public class UpdateGrantsDto
 {
+	/// <summary>الخزائن وصلاحيات كل منها.</summary>
 	public List<BookGrantDto> Grants { get; set; } = new List<BookGrantDto>();
 }
 
 public class UpdateManagedUserDto
 {
+	/// <summary>الاسم الظاهر.</summary>
 	public string? Name { get; set; }
 
+	/// <summary>البريد (اختياري).</summary>
 	public string? Email { get; set; }
 }
 
 public class ResetPasswordDto
 {
+	/// <summary>كلمة المرور: 8 أحرف على الأقل، فيها حرف ورقم.</summary>
 	public string Password { get; set; }
 }
 
 public class BookGrantViewDto
 {
+	/// <summary>معرّف الخزنة.</summary>
 	public Guid BookId { get; set; }
 
 	public string BookName { get; set; }
@@ -50,6 +62,7 @@ public class BookGrantViewDto
 
 	public string BusinessName { get; set; }
 
+	/// <summary>رموز الصلاحيات على هذه الخزنة، مثل book.view و transaction.create (القائمة الكاملة من /API/Permission/catalog).</summary>
 	public List<string> Permissions { get; set; } = new List<string>();
 }
 
@@ -57,10 +70,13 @@ public class ManagedUserDto
 {
 	public Guid Id { get; set; }
 
+	/// <summary>اسم الدخول (فريد).</summary>
 	public string Username { get; set; }
 
+	/// <summary>الاسم الظاهر.</summary>
 	public string Name { get; set; }
 
+	/// <summary>البريد (اختياري).</summary>
 	public string Email { get; set; }
 
 	public int Level { get; set; }
@@ -77,6 +93,7 @@ public class ManagedUserDto
 
 	public int FingerprintCount { get; set; }
 
+	/// <summary>الخزائن وصلاحيات كل منها.</summary>
 	public List<BookGrantViewDto> Grants { get; set; } = new List<BookGrantViewDto>();
 }
 
@@ -84,6 +101,7 @@ public class PermissionDefinitionDto
 {
 	public string Code { get; set; }
 
+	/// <summary>الاسم الظاهر.</summary>
 	public string Name { get; set; }
 
 	public string Group { get; set; }

@@ -10,6 +10,7 @@ using cashbook.Services;
 
 namespace cashbook.Controllers;
 
+/// <summary>جهات الاتصال على مستوى المنشأة. العرض لكل عضو، والإدارة لمن يملك contact.manage.</summary>
 [Route("API/[Controller]")]
 public class ContactController : BusinessReferenceController<Contact, ContactDto, CreateContactDto, UpdateContactDto>
 {

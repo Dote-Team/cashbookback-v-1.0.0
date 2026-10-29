@@ -12,10 +12,7 @@ using cashbook.Services;
 
 namespace cashbook.Controllers;
 
-/// <summary>
-/// الحقول المخصصة لكل خزنة. الصلاحية تُفحص على خزنة الحقل نفسه، والأخطاء غير المتوقعة
-/// يلتقطها المعالج العام فلا يصل نص الاستثناء إلى العميل.
-/// </summary>
+/// <summary>الحقول المخصصة لكل خزنة (مثل رقم الفاتورة). قيمها تُرسل مع القيد في CustomFieldValues.</summary>
 [Route("API/[Controller]")]
 [Authorize]
 public class CustomFieldController : ApiControllerBase
@@ -30,6 +27,18 @@ public class CustomFieldController : ApiControllerBase
 		_permissions = permissions;
 	}
 
+	/// <summary>حقول خزنة</summary>
+	/// <remarks>
+	/// **الصلاحية:** book.view على الخزنة.
+	/// </remarks>
+	/// <param name="bookId">معرّف الخزنة.</param>
+	/// <param name="skip">رقم الصفحة، يبدأ من 1.</param>
+	/// <param name="take">عدد السجلات في الصفحة.</param>
+	/// <param name="search">بحث في اسم الحقل.</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
+	/// <response code="404">الخزنة غير موجودة.</response>
 	[HttpGet]
 	public async Task<ActionResult<APIResponse>> GetPaginatedCustomField([FromQuery] Guid bookId, [FromQuery] int? skip = 1, [FromQuery] int? take = 25, [FromQuery] string? search = null)
 	{
@@ -46,6 +55,15 @@ public class CustomFieldController : ApiControllerBase
 		return Success(await _customFieldRepository.GetcustomFieldAsync(bookId, Page(skip), PageSize(take), search));
 	}
 
+	/// <summary>حقل واحد</summary>
+	/// <remarks>
+	/// **الصلاحية:** book.view على خزنة الحقل.
+	/// </remarks>
+	/// <param name="id">معرّف الحقل.</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
+	/// <response code="404">السجل غير موجود، أو مؤرشف.</response>
 	[HttpGet("{id:Guid}", Name = "GetCustomField")]
 	public async Task<ActionResult<APIResponse>> GetCustomField(Guid id)
 	{
@@ -66,6 +84,18 @@ public class CustomFieldController : ApiControllerBase
 		return Success(customField);
 	}
 
+	/// <summary>إضافة حقل مخصص</summary>
+	/// <remarks>
+	/// **الصلاحية:** custom_field.manage على الخزنة.
+	///
+	/// isRequired = true يجعل الحقل إلزامياً عند إضافة قيد.
+	/// </remarks>
+	/// <param name="createCustomFieldDto">اسم الحقل والخزنة وهل هو إلزامي.</param>
+	/// <response code="201">أُضيف الحقل.</response>
+	/// <response code="400">بيانات الطلب ناقصة أو غير صالحة. السبب في errorMessages.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
+	/// <response code="404">الخزنة غير موجودة.</response>
 	[HttpPost]
 	public async Task<ActionResult<APIResponse>> CreateCustomField([FromBody] CreateCustomFieldDto createCustomFieldDto)
 	{
@@ -92,7 +122,16 @@ public class CustomFieldController : ApiControllerBase
 		return Success(customField, HttpStatusCode.Created);
 	}
 
-	/// <summary>لا حذف في النظام: هذا المسار يؤرشف الحقل. القيم المسجلة في القيود القديمة تبقى.</summary>
+	/// <summary>أرشفة حقل (لا حذف)</summary>
+	/// <remarks>
+	/// **الصلاحية:** custom_field.manage على الخزنة. قيمه في القيود القديمة تبقى.
+	/// </remarks>
+	/// <param name="id">معرّف الحقل.</param>
+	/// <param name="reason">سبب الأرشفة (اختياري).</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
+	/// <response code="404">السجل غير موجود، أو مؤرشف.</response>
 	[HttpDelete("{id:Guid}", Name = "DeleteCustomField")]
 	public async Task<ActionResult<APIResponse>> DeleteCustomField(Guid id, [FromQuery] string? reason = null)
 	{
@@ -114,6 +153,16 @@ public class CustomFieldController : ApiControllerBase
 		return Success(new { archived = true });
 	}
 
+	/// <summary>تعديل حقل</summary>
+	/// <remarks>
+	/// **الصلاحية:** custom_field.manage على الخزنة. أرسل ما تريد تغييره فقط (key أو isRequired).
+	/// </remarks>
+	/// <param name="id">معرّف الحقل.</param>
+	/// <param name="updateCustomFieldDto">الحقول المراد تغييرها.</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
+	/// <response code="404">السجل غير موجود، أو مؤرشف.</response>
 	[HttpPut("{id:Guid}", Name = "UpdateCustomField")]
 	public async Task<ActionResult<APIResponse>> UpdateCustomField([FromRoute] Guid id, [FromBody] UpdateCustomFieldDto updateCustomFieldDto)
 	{

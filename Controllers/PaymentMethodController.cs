@@ -10,6 +10,7 @@ using cashbook.Services;
 
 namespace cashbook.Controllers;
 
+/// <summary>طرق الدفع على مستوى المنشأة. العرض لكل عضو، والإدارة لمن يملك payment_method.manage.</summary>
 [Route("API/[Controller]")]
 public class PaymentMethodController : BusinessReferenceController<PaymentMethod, PaymentMethodDto, CreatePaymentMethodDto, UpdatePaymentMethodDto>
 {

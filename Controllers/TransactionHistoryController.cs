@@ -13,6 +13,7 @@ using cashbook.Services;
 
 namespace cashbook.Controllers;
 
+/// <summary>سجل تغييرات القيود: من أضاف، ومن عدّل المبلغ من كم إلى كم، ومن أرشف.</summary>
 [Route("API/[Controller]")]
 [Authorize]
 public class TransactionHistoryController : ApiControllerBase
@@ -30,6 +31,18 @@ public class TransactionHistoryController : ApiControllerBase
 		_context = context;
 	}
 
+	/// <summary>سجل تغييرات قيود خزنة</summary>
+	/// <remarks>
+	/// **الصلاحية:** history.view على الخزنة.
+	///
+	/// كل إضافة (POST) وتعديل (PUT) وأرشفة (ARCHIVE) واستيراد (IMPORT)، مع المبلغ قبل وبعد واسم من نفّذ.
+	/// </remarks>
+	/// <param name="bookId">معرّف الخزنة.</param>
+	/// <param name="businessId">للتوافق مع الواجهة فقط.</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
+	/// <response code="404">الخزنة غير موجودة.</response>
 	[HttpGet("ByBook")]
 	public async Task<ActionResult<APIResponse>> GetAllByBookId([FromQuery] Guid bookId, [FromQuery] Guid businessId)
 	{
@@ -45,6 +58,16 @@ public class TransactionHistoryController : ApiControllerBase
 		return Success(await _transactionHistoryRepository.GetAllByBookIdAsync(bookId));
 	}
 
+	/// <summary>سجل تغييرات قيد واحد</summary>
+	/// <remarks>
+	/// **الصلاحية:** history.view على خزنة القيد.
+	/// </remarks>
+	/// <param name="transactionId">معرّف القيد.</param>
+	/// <param name="businessId">للتوافق مع الواجهة فقط.</param>
+	/// <response code="200">تمت العملية. النتيجة في الحقل result.</response>
+	/// <response code="401">لم تسجّل الدخول، أو رمز الدخول منتهٍ أو غير صالح.</response>
+	/// <response code="403">لا تملك الصلاحية المطلوبة.</response>
+	/// <response code="404">السجل غير موجود، أو مؤرشف.</response>
 	[HttpGet("ByTransaction")]
 	public async Task<ActionResult<APIResponse>> GetAllByTransactionId([FromQuery] Guid transactionId, [FromQuery] Guid businessId)
 	{
