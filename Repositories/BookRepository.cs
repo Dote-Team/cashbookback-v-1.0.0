@@ -138,12 +138,12 @@ public class BookRepository : Repository<Book>, IBookRepository, IRepository<Boo
 				SortDirection sortDirection2 = valueOrDefault;
 				if (sortDirection2 == SortDirection.asc)
 				{
-					orderedQueryable = booksRaw.OrderBy(b => b.CashInIqd - b.CashOutIqd);
+					orderedQueryable = booksRaw.OrderBy(b => b.CashInIqd - b.CashOutIqd).ThenBy(b => b.CashInUsd - b.CashOutUsd);
 					break;
 				}
 				if (sortDirection2 == SortDirection.desc)
 				{
-					orderedQueryable = booksRaw.OrderByDescending(b => b.CashInIqd - b.CashOutIqd);
+					orderedQueryable = booksRaw.OrderByDescending(b => b.CashInIqd - b.CashOutIqd).ThenByDescending(b => b.CashInUsd - b.CashOutUsd);
 					break;
 				}
 			}

@@ -211,6 +211,20 @@ internal class Program
         builder.Services.AddScoped<ITokenService, TokenService>();
         builder.Services.AddSingleton<IFileStorage, FileStorage>();
         builder.Services.AddSingleton<ISessionCache, SessionCache>();
+        // ضغط استجابات JSON: قوائم القيود والتصدير تصغر إلى نحو العُشر.
+        builder.Services.AddResponseCompression(delegate (Microsoft.AspNetCore.ResponseCompression.ResponseCompressionOptions options)
+        {
+            options.Providers.Add<Microsoft.AspNetCore.ResponseCompression.BrotliCompressionProvider>();
+            options.Providers.Add<Microsoft.AspNetCore.ResponseCompression.GzipCompressionProvider>();
+        });
+        builder.Services.Configure(delegate (Microsoft.AspNetCore.ResponseCompression.BrotliCompressionProviderOptions options)
+        {
+            options.Level = System.IO.Compression.CompressionLevel.Fastest;
+        });
+        builder.Services.Configure(delegate (Microsoft.AspNetCore.ResponseCompression.GzipCompressionProviderOptions options)
+        {
+            options.Level = System.IO.Compression.CompressionLevel.Fastest;
+        });
         builder.Services.Configure<FingerprintSettings>(builder.Configuration.GetSection("Fingerprint"));
         builder.Services.AddSingleton<IFingerprintMatcher>(delegate (IServiceProvider sp)
         {
@@ -226,8 +240,6 @@ internal class Program
         builder.Services.AddScoped<ITransactionRepository, TransactionRepository>();
         builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();
         builder.Services.AddScoped<IUserRepository, UserRepository>();
-        builder.Services.Configure<MailSettings>(builder.Configuration.GetSection("MailSettings"));
-        builder.Services.AddScoped<IEmailService, EmailService>();
         builder.Services.AddScoped<IPaymentMethodRepository, PaymentMethodRepository>();
         builder.Services.AddScoped<ISettingRepository, SettingRepository>();
         builder.Services.AddScoped<ITransactionHistoryRepository, TransactionHistoryRepository>();
@@ -285,6 +297,7 @@ internal class Program
             });
         });
         app.UseForwardedHeaders();
+        app.UseResponseCompression();
         app.Use(async delegate (HttpContext context, Func<Task> next)
         {
             // المتصفح لا يخمّن نوع الملف، ولا تُعرض صفحات الـ API داخل إطار في موقع آخر.
@@ -328,6 +341,12 @@ internal class Program
             };
             return Results.File(path, contentType);
         }).WithDisplayName("ShowImage");
+        // فحص الصحة لـ Docker والمراقبة: 200 إن كانت قاعدة البيانات متاحة، و503 إن لم تكن.
+        app.MapGet("/health", async delegate (ApplicationDbContext db, System.Threading.CancellationToken cancellationToken)
+        {
+            bool database = await db.Database.CanConnectAsync(cancellationToken);
+            return Results.Json(new { status = database ? "healthy" : "unhealthy", database }, statusCode: database ? StatusCodes.Status200OK : StatusCodes.Status503ServiceUnavailable);
+        }).WithDisplayName("Health");
         if (app.Environment.IsDevelopment())
         {
             app.UseSwagger();
