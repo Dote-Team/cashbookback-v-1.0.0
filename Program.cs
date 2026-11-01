@@ -87,8 +87,10 @@ internal class Program
         {
             options.AddPolicy("AllowConfiguredOrigins", delegate (CorsPolicyBuilder policy)
             {
+                // الواجهة تقرأ سبب الخروج (عدم النشاط) وموعد إعادة المحاولة؛ المتصفح يخفي غير ذلك عنها.
                 policy.WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod()
-                    .AllowCredentials();
+                    .AllowCredentials()
+                    .WithExposedHeaders(cashbook.Services.SessionActivity.ExpiredHeader, "Retry-After");
             });
         });
         builder.Services.AddControllers(delegate (MvcOptions options)
