@@ -21,7 +21,7 @@ public class FingerprintSampleDto
 
 public class EnrollFingerprintDto
 {
-	/// <summary>المستخدم المراد تسجيل بصمته؛ فارغ = المستخدم الحالي.</summary>
+	/// <summary>المستخدم المراد تسجيل بصمته؛ فارغ = السوبر أدمن نفسه. التسجيل للسوبر أدمن فقط.</summary>
 	public Guid? UserId { get; set; }
 
 	/// <summary>0-9: 0 إبهام اليمنى ... 4 خنصر اليمنى، 5 إبهام اليسرى ... 9 خنصر اليسرى.</summary>

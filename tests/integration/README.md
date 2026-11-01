@@ -39,6 +39,7 @@ python tests/integration/test_idle_timeout.py
 
 ## ملاحظات
 
+- اختبارات البصمة في `test_permissions_archive.py` ترسل صوراً مصطنعة، فتحتاج `Fingerprint__Matcher=dev`. إن كان `.env.local` على `sourceafis` (قارئ حقيقي) فشغّل الـ API للاختبار من نسخة منه فيها `dev` عبر `DOTENV_PATH`، لأن ملف `.env` يتقدم على متغيرات البيئة.
 - `test_security.py` يتحقق من حد تجديد الرمز (30 في الدقيقة). عند تشغيل كل الملفات متتالية قد يصل `test_idle_timeout.py` أو غيره إلى هذا الحد فيعيد 429؛ انتظر دقيقة بين الملفات.
 - `test_permissions_archive.py` يؤرشف الخزنة 4. قبل إعادة تشغيله أرجع الخزائن المؤرشفة في قاعدة التطوير فقط:
   ```sql

@@ -92,11 +92,13 @@ public sealed class FingerprintService : IFingerprintService
 		{
 			return ServiceResult.Fail(HttpStatusCode.ServiceUnavailable, _unavailableReason!);
 		}
-		Guid targetId = dto.UserId ?? callerId;
-		if (targetId != callerId && !await _users.CanManageAsync(callerId, targetId))
+		// تسجيل البصمة عند السوبر أدمن فقط، حتى لنفس المستخدم: يحضر المستخدم ويسجّل له السوبر أدمن،
+		// فلا يربط أحد إصبعاً غير إصبعه بحساب.
+		if (!await _context.Users.AnyAsync(u => u.Id == callerId && u.IsActive && u.IsSuperAdmin))
 		{
-			return ServiceResult.Fail(HttpStatusCode.Forbidden, "لا تملك صلاحية تسجيل بصمة لهذا المستخدم.");
+			return ServiceResult.Fail(HttpStatusCode.Forbidden, "تسجيل البصمة للسوبر أدمن فقط. اطلب منه تسجيل بصمتك.");
 		}
+		Guid targetId = dto.UserId ?? callerId;
 		User? user = await _context.Users.FirstOrDefaultAsync(u => u.Id == targetId);
 		if (user == null || !user.IsActive)
 		{
@@ -226,6 +228,7 @@ public sealed class FingerprintService : IFingerprintService
 		byte[] probe = _matcher.Extract(sample);
 		// أعلى درجة لكل مستخدم: في البحث 1:N تطابق مستخدمَين فوق الحد يعني التباساً لا دخولاً.
 		Dictionary<Guid, (UserFingerprint Fingerprint, double Score)> bestPerUser = new Dictionary<Guid, (UserFingerprint, double)>();
+		double bestScore = 0;
 		foreach (UserFingerprint fingerprint in fingerprints)
 		{
 			List<string>? stored;
@@ -241,12 +244,16 @@ public sealed class FingerprintService : IFingerprintService
 			foreach (string template in stored ?? new List<string>())
 			{
 				double score = _matcher.Score(Convert.FromBase64String(template), probe);
+				bestScore = Math.Max(bestScore, score);
 				if (score >= _settings.MatchThreshold && (!bestPerUser.TryGetValue(fingerprint.UserId, out var current) || score > current.Score))
 				{
 					bestPerUser[fingerprint.UserId] = (fingerprint, score);
 				}
 			}
 		}
+		// للمعايرة مع القارئ الفعلي: إن رُفض صاحب البصمة فالدرجة هنا تبيّن كم يجب خفض MatchThreshold.
+		_logger.LogInformation("الدخول بالبصمة: أعلى درجة {Score:F1}، الحد {Threshold}، بصمات مقارنة {Count}، مستخدمون فوق الحد {Matched}",
+			bestScore, _settings.MatchThreshold, fingerprints.Count, bestPerUser.Count);
 		if (bestPerUser.Count != 1)
 		{
 			if (bestPerUser.Count > 1)
