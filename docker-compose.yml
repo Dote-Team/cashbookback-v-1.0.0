@@ -4,8 +4,12 @@
 #  التشغيل:
 #      1) أنشئ ملف .env بجانب هذا الملف (انسخه من .env.example واملأ الأسرار)
 #      2) docker compose build
-#      3) docker compose --profile tools run --rm migrate     # إنشاء الجداول
+#      3) ولّد المفتاحين (التوقيع وتشفير البصمات) وضعهما في .env:
+#         docker run --rm --entrypoint dotnet cashbook-api:latest cashbook.dll --generate-secret
 #      4) docker compose up -d
+#
+#  الجداول تُنشأ وتُرقّى تلقائياً عند إقلاع api (ومنها ترحيل LastActivityAt للخروج
+#  التلقائي)، فلا يلزم تشغيل migrate إلا إن ضبطت Database__MigrateOnStartup=false.
 #
 #  كل الأسرار تُقرأ من .env — ولا سرّ واحد مكتوب في هذا الملف.
 # ============================================================================
@@ -72,8 +76,10 @@ services:
         condition: service_healthy
 
   # --------------------------------------------------------------------------
-  #  أدوات: تطبيق ترحيالات EF Core — تعمل مرة واحدة ثم تتوقف.
-  #  ليست جزءاً من التشغيل العادي (profile = tools).
+  #  أدوات: تطبيق ترحيالات EF Core يدوياً — تعمل مرة واحدة ثم تتوقف.
+  #  ليست جزءاً من التشغيل العادي (profile = tools): api يرحّل بنفسه عند الإقلاع،
+  #  وهذه للحالة Database__MigrateOnStartup=false فقط:
+  #      docker compose --profile tools run --rm migrate
   # --------------------------------------------------------------------------
   migrate:
     profiles: ["tools"]
