@@ -3,7 +3,7 @@
   <!--
     البرنامج الوسيط لقارئ البصمة ZK9500. يعمل على جهاز المستخدم (Windows)، يلتقط صورة
     البصمة عبر ZKFinger SDK ويعيدها للمتصفح. لا يطابق ولا يخزّن شيئاً: المطابقة في الخادم.
-    النشر: انظر README.md
+    التثبيت كخدمة: scripts/install-service.cmd (كمسؤول). إعادة البناء: dotnet publish بإعدادات Release و win-x64 وملف تنفيذي واحد، إلى المجلد publish.
   -->
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>

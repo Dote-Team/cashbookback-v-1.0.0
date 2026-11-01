@@ -45,7 +45,7 @@ RUN apt-get update \
 #    المتغيّر Kestrel__Endpoints__Http__Url أدناه يتجاوز قيمة الملف ويجعل
 #    الخادم ينصت على كل الواجهات، وبدونه لا يعمل الحاوي إطلاقاً.
 #  • لا سرّ واحد مكتوب هنا. القيم الحسّاسة تُمرَّر وقت التشغيل متغيّراتِ بيئة
-#    (أو من ملف .env يحمل أسماءً بالشكل Section__Key كما في GO-LIVE.md).
+#    (أو من ملف .env يحمل أسماءً بالشكل Section__Key كما في .env.example).
 ENV ASPNETCORE_ENVIRONMENT=Production \
   Kestrel__Endpoints__Http__Url=http://+:8080 \
   ASPNETCORE_HTTP_PORTS=8080 \

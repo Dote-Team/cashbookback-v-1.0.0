@@ -3,7 +3,7 @@ using FingerprintBridge;
 // البرنامج الوسيط لقارئ البصمة: يستمع على 127.0.0.1 فقط، ولا يقبل إلا طلبات الواجهة المسموحة.
 // التشغيل:      CashbookFingerprintBridge.exe            (القارئ الحقيقي)
 // المحاكاة:     CashbookFingerprintBridge.exe --simulate (بلا جهاز، للتطوير)
-// كخدمة ويندوز: انظر README.md
+// كخدمة ويندوز: scripts/install-service.cmd (كمسؤول)
 bool simulate = args.Contains("--simulate");
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(new WebApplicationOptions

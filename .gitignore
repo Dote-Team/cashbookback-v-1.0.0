@@ -385,3 +385,4 @@ CHANGES-REPORT.html
 # المرفقات المرفوعة بيانات مستخدمين، لا مكان لها في Git (تبقى في volume الخادم)
 wwwroot/uploads/*
 !wwwroot/uploads/.gitkeep
+*.rar
