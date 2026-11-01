@@ -88,6 +88,12 @@ public sealed class AuditLogMiddleware
 			string item = tuple.Action;
 			string item2 = tuple.Category;
 			string item3 = tuple.Severity;
+			if (scope.OutcomeAction != null)
+			{
+				item = scope.OutcomeAction;
+				item2 = "Auth";
+				item3 = "Warning";
+			}
 			bool isSuccess = num < 400;
 			bool isSlow = elapsedMs >= _settings.SlowRequestMs;
 			AuditLog entry = new AuditLog

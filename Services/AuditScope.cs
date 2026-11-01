@@ -59,6 +59,9 @@ public sealed class AuditScope
 
 	public string? Action { get; set; }
 
+	/// <summary>نتيجة يحددها وسيط آخر وتتقدم على التصنيف من المسار، مثل الخروج التلقائي لعدم النشاط.</summary>
+	public string? OutcomeAction { get; set; }
+
 	public string? RequestBody { get; set; }
 
 	public string? EntityActionHint { get; set; }

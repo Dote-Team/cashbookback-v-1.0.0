@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.Configuration;
 using cashbook.Dto;
 using cashbook.Dto.fingerprint;
 using cashbook.Dto.user;
@@ -320,6 +321,25 @@ public class UserController : ApiControllerBase
 			return Fail(HttpStatusCode.Unauthorized, "الجلسة غير صالحة أو منتهية.");
 		}
 		return Success(new { message = "Logged out successfully." });
+	}
+
+	/// <summary>تسجيل نشاط المستخدم (منع الخروج التلقائي)</summary>
+	/// <remarks>
+	/// الجلسة تنتهي تلقائياً إن لم يصل أي طلب منها خلال مدة الخمول (5 دقائق افتراضياً، الإعداد Session__IdleTimeoutMinutes).
+	///
+	/// **طريقة الاستخدام في الواجهة:** عند تحريك الفأرة أو الكتابة أو اللمس أرسل هذا الطلب، مرة كل دقيقة على الأكثر.
+	/// أي طلب آخر بالرمز يُحسب نشاطاً أيضاً، أما تجديد الرمز (refresh-token) فلا يُحسب.
+	///
+	/// إن انتهت الجلسة بالخمول يعيد أي مسار 401 مع الترويسة `X-Session-Expired: idle`، فتنقل الواجهة المستخدم إلى صفحة الدخول.
+	/// </remarks>
+	/// <response code="200">النتيجة: idleTimeoutMinutes (0 = الميزة معطّلة).</response>
+	/// <response code="401">الجلسة منتهية، أو انتهت لعدم النشاط.</response>
+	[HttpPost("activity")]
+	[Authorize]
+	public ActionResult<APIResponse> Activity([FromServices] IConfiguration configuration)
+	{
+		TimeSpan? idle = SessionActivity.IdleTimeout(configuration);
+		return Success(new { idleTimeoutMinutes = idle.HasValue ? (int)idle.Value.TotalMinutes : 0 });
 	}
 
 	private ActionResult<APIResponse>? IsThrottled(string key)

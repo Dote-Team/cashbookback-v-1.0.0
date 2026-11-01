@@ -26,6 +26,7 @@ python tests/integration/test_permissions_archive.py
 python tests/integration/test_security.py
 python tests/integration/test_sessions_export.py
 python tests/integration/test_reference_data.py
+python tests/integration/test_idle_timeout.py
 ```
 
 | الملف | ما يختبره |
@@ -34,9 +35,11 @@ python tests/integration/test_reference_data.py
 | `test_security.py` | روابط المرفقات الموقّعة، وفحص الملفات المرفوعة، وJWT، وCORS، وتحديد المعدل، وحد حجم الطلب |
 | `test_sessions_export.py` | إبطال الجلسة فوراً عند الخروج أو التعطيل أو تغيير كلمة المرور، والتصدير |
 | `test_reference_data.py` | أن التعديل الجزئي لا يمحو الحقول غير المرسلة، وفحص بيانات الإضافة |
+| `test_idle_timeout.py` | الخروج التلقائي بعد 5 دقائق بلا نشاط، ورفض تجديد الرمز بعده. يحتاج `sqlcmd` لأنه يرجّع وقت آخر نشاط في القاعدة بدل الانتظار (`CASHBOOK_SQL_SERVER` و`CASHBOOK_SQL_DATABASE` اختياريان) |
 
 ## ملاحظات
 
+- `test_security.py` يتحقق من حد تجديد الرمز (30 في الدقيقة). عند تشغيل كل الملفات متتالية قد يصل `test_idle_timeout.py` أو غيره إلى هذا الحد فيعيد 429؛ انتظر دقيقة بين الملفات.
 - `test_permissions_archive.py` يؤرشف الخزنة 4. قبل إعادة تشغيله أرجع الخزائن المؤرشفة في قاعدة التطوير فقط:
   ```sql
   UPDATE Books SET IsArchived = 0, ArchivedAt = NULL, ArchivedByUserId = NULL, ArchiveReason = NULL WHERE IsArchived = 1;

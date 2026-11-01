@@ -51,6 +51,8 @@ public sealed class TokenService : ITokenService
 
 	private readonly int _refreshTokenDays;
 
+	private readonly TimeSpan? _idleTimeout;
+
 	public TokenService(ApplicationDbContext context, IConfiguration configuration, IExchangeRateAuthorization exchangeRateAuthorization, IFileStorage files)
 	{
 		_context = context;
@@ -62,6 +64,7 @@ public sealed class TokenService : ITokenService
 		int? hours = configuration.GetValue<int?>("Jwt:ExpireHours");
 		_accessTokenLifetime = TimeSpan.FromMinutes(Math.Clamp(configuration.GetValue<int?>("Jwt:ExpireMinutes") ?? (hours.HasValue ? hours.Value * 60 : 60), 5, 24 * 60));
 		_refreshTokenDays = Math.Max(1, configuration.GetValue<int>("Jwt:RefreshExpireDays"));
+		_idleTimeout = SessionActivity.IdleTimeout(configuration);
 	}
 
 	public async Task<LoginResponseDto> IssueAsync(User user, string? deviceToken, string loginMethod)
@@ -74,7 +77,8 @@ public sealed class TokenService : ITokenService
 			UserId = user.Id,
 			RefreshToken = Hash(refresh),
 			DeviceToken = deviceToken ?? "",
-			ExpiredAt = DateTime.UtcNow.AddDays(_refreshTokenDays)
+			ExpiredAt = DateTime.UtcNow.AddDays(_refreshTokenDays),
+			LastActivityAt = DateTime.UtcNow
 		});
 		await _context.SaveChangesAsync();
 		return await BuildResponseAsync(user, sessionId, access, refresh);
@@ -105,6 +109,13 @@ public sealed class TokenService : ITokenService
 		Session? session = await _context.Sessions.FirstOrDefaultAsync(s => s.Id == sessionId && s.UserId == userId);
 		if (user == null || !user.IsActive || session == null || session.ExpiredAt < DateTime.UtcNow)
 		{
+			return null;
+		}
+		// التجديد يحدث تلقائياً في الخلفية، فلا يُعد نشاطاً، ولا يعيد جلسة انتهت بالخمول.
+		if (SessionActivity.IsIdle(session.LastActivityAt, _idleTimeout, DateTime.UtcNow))
+		{
+			session.ExpiredAt = DateTime.UtcNow;
+			await _context.SaveChangesAsync();
 			return null;
 		}
 		if (!CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(Hash(refreshToken)), Encoding.ASCII.GetBytes(session.RefreshToken ?? "")))
@@ -164,6 +175,7 @@ public sealed class TokenService : ITokenService
 			IsSuperAdmin = level == UserLevels.SuperAdmin,
 			Level = level,
 			LevelName = UserLevels.Name(level),
+			IdleTimeoutMinutes = _idleTimeout.HasValue ? (int)_idleTimeout.Value.TotalMinutes : 0,
 			CanManageExchangeRate = level == UserLevels.SuperAdmin || exchangeRateBusinesses.Any(),
 			ExchangeRateBusinessIds = exchangeRateBusinesses
 		};

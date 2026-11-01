@@ -10,6 +10,8 @@ public static class AuditAction
 
 	public const string Logout = "user.logout";
 
+	public const string SessionIdleTimeout = "user.session.idle_timeout";
+
 	public const string RefreshToken = "user.token.refresh";
 
 	public const string PasswordChange = "user.password.change";
@@ -75,6 +77,7 @@ public static class AuditAction
 			"user.login.failed" => "محاولة دخول فاشلة", 
 			"user.register" => "تسجيل حساب جديد", 
 			"user.logout" => "خروج", 
+			"user.session.idle_timeout" => "خروج تلقائي لعدم النشاط", 
 			"user.token.refresh" => "تجديد رمز دخول", 
 			"user.password.change" => "تغيير كلمة مرور", 
 			"user.profile.update" => "تعديل بيانات الحساب", 

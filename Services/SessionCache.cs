@@ -6,7 +6,7 @@ using Microsoft.Extensions.Caching.Memory;
 namespace cashbook.Services;
 
 /// <summary>ما يحتاجه وسيط الجلسة من صف الجلسة، بلا الرموز نفسها.</summary>
-public sealed record CachedSession(Guid SessionId, Guid UserId, DateTime ExpiredAt, string? DeviceToken, bool UserActive);
+public sealed record CachedSession(Guid SessionId, Guid UserId, DateTime ExpiredAt, string? DeviceToken, bool UserActive, DateTime LastActivityAt);
 
 public interface ISessionCache
 {

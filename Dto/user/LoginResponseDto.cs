@@ -30,5 +30,8 @@ public class LoginResponseDto
 
 	public bool CanManageExchangeRate { get; set; }
 
+	/// <summary>دقائق الخمول قبل الخروج التلقائي (0 = معطّل). الواجهة تبدأ عدّادها منها.</summary>
+	public int IdleTimeoutMinutes { get; set; }
+
 	public List<Guid> ExchangeRateBusinessIds { get; set; } = new List<Guid>();
 }

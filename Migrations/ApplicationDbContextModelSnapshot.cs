@@ -527,6 +527,9 @@ namespace cashbook.Migrations
                     b.Property<DateTime>("ExpiredAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<DateTime>("LastActivityAt")
+                        .HasColumnType("datetime2");
+
                     b.Property<string>("RefreshToken")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");

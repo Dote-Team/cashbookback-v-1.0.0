@@ -1,4 +1,8 @@
 ﻿using cashbook.Data;
+using cashbook.Dto;
+using cashbook.Interfaces;
+using cashbook.Models;
+using cashbook.Models.Constants;
 using cashbook.Services;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
@@ -20,12 +24,15 @@ public class SessionValidationMiddleware
 
     private readonly RequestDelegate _next;
 
-    public SessionValidationMiddleware(RequestDelegate next)
+    private readonly TimeSpan? _idleTimeout;
+
+    public SessionValidationMiddleware(RequestDelegate next, IConfiguration configuration)
     {
         _next = next;
+        _idleTimeout = SessionActivity.IdleTimeout(configuration);
     }
 
-    public async Task InvokeAsync(HttpContext context, ApplicationDbContext dbContext, ISessionCache sessionCache)
+    public async Task InvokeAsync(HttpContext context, ApplicationDbContext dbContext, ISessionCache sessionCache, IAuditLogger auditLogger)
     {
         if (context.User.Identity?.IsAuthenticated == true)
         {
@@ -53,7 +60,7 @@ public class SessionValidationMiddleware
             {
                 session = await dbContext.Sessions
                     .Where(s => s.Id == sessionId && s.UserId == userId)
-                    .Select(s => new CachedSession(s.Id, s.UserId, s.ExpiredAt, s.DeviceToken, s.User.IsActive))
+                    .Select(s => new CachedSession(s.Id, s.UserId, s.ExpiredAt, s.DeviceToken, s.User.IsActive, s.LastActivityAt))
                     .FirstOrDefaultAsync();
                 if (session != null)
                 {
@@ -66,6 +73,55 @@ public class SessionValidationMiddleware
                 context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                 await context.Response.WriteAsync("Session expired or not found.");
                 return;
+            }
+
+            DateTime now = DateTime.UtcNow;
+            if (SessionActivity.IsIdle(session.LastActivityAt, _idleTimeout, now))
+            {
+                // تنتهي الجلسة نفسها، لا هذا الطلب فقط: رمز التحديث لا يعيدها.
+                await dbContext.Sessions.Where(s => s.Id == sessionId)
+                    .ExecuteUpdateAsync(u => u.SetProperty(s => s.ExpiredAt, now));
+                sessionCache.InvalidateSession(sessionId);
+                if (AuditScope.Current is { } idleAudit)
+                {
+                    idleAudit.SessionId = sessionId;
+                    idleAudit.OutcomeAction = AuditAction.SessionIdleTimeout;
+                }
+                else
+                {
+                    // طلبات القراءة لا تمر بسجل التدقيق (LogReadRequests)، والخروج حدث أمني يُسجَّل دائماً.
+                    auditLogger.Enqueue(new AuditLog
+                    {
+                        CorrelationId = Guid.NewGuid(),
+                        Category = "Auth",
+                        Action = AuditAction.SessionIdleTimeout,
+                        Severity = "Warning",
+                        Summary = AuditAction.Label(AuditAction.SessionIdleTimeout),
+                        IsSuccess = false,
+                        StatusCode = StatusCodes.Status401Unauthorized,
+                        UserId = userId,
+                        SessionId = sessionId,
+                        DeviceToken = session.DeviceToken,
+                        HttpMethod = context.Request.Method,
+                        Path = context.Request.Path.Value
+                    });
+                }
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                context.Response.Headers[SessionActivity.ExpiredHeader] = "idle";
+                await context.Response.WriteAsJsonAsync(new APIResponse
+                {
+                    StatusCode = System.Net.HttpStatusCode.Unauthorized,
+                    IsSuccess = false,
+                    ErrorMessages = { "انتهت الجلسة لعدم النشاط. سجّل الدخول مجدداً." }
+                });
+                return;
+            }
+            if (_idleTimeout is { } idle && now - session.LastActivityAt >= SessionActivity.WriteInterval(idle))
+            {
+                await dbContext.Sessions.Where(s => s.Id == sessionId)
+                    .ExecuteUpdateAsync(u => u.SetProperty(s => s.LastActivityAt, now));
+                session = session with { LastActivityAt = now };
+                sessionCache.Set(session);
             }
 
             context.Items[DeviceTokenItemKey] = session.DeviceToken;

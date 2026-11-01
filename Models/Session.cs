@@ -24,4 +24,7 @@ public class Session
 	public User User { get; set; } = null!;
 
 	public DateTime ExpiredAt { get; set; }
+
+	/// <summary>آخر طلب من المستخدم بهذه الجلسة (UTC). بعد مدة الخمول بلا نشاط تنتهي الجلسة. انظر SessionActivity.</summary>
+	public DateTime LastActivityAt { get; set; }
 }
